@@ -4,11 +4,13 @@ A local desktop app that scans your network, keeps a history of every discovered
 
 ## What we are building
 
-- An Electron desktop app with a React frontend (built from the existing TanStack Start project).
+- An Electron desktop app with a React + Material UI frontend (built from the existing TanStack Start project).
 - The heavy scanning work runs in the Node.js main process, so it has real network access (ICMP, ARP, TCP ports, MAC addresses).
 - A local SQLite database in the main process stores networks, scan runs, devices, and a full history.
+- The same scanner engine also ships as a Docker container with a web UI, for always-on scanning on a server or NAS.
 - Users can add networks by typing a CIDR/subnet, picking the auto-detected local network, or uploading a list of IPs.
 - The dashboard shows the current scan, device details (IP, hostname, MAC, vendor, online status, open ports), and a history comparison (new, missing, status changes).
+
 
 ## Why local SQLite instead of Lovable Cloud
 
