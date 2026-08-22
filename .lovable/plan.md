@@ -61,22 +61,35 @@ Because this is a desktop app that scans the user's local network, the data natu
    - TCP port checks on a configurable set of common ports.
    - Emit progress events to the renderer while scanning.
 
-4. **Frontend UI**
+4. **Frontend UI (Material UI)**
+   - Use MUI (`@mui/material`, `@emotion/react`, `@emotion/styled`, `@mui/icons-material`) as the component library.
+   - Add `@mui/x-data-grid` for the device tables (sorting, filtering, column resize, CSV export built in).
+   - Define one central MUI theme (dark palette, typography, component defaults) and use theme tokens everywhere — no hardcoded colors in components.
    - **Networks page**: list existing networks, add new (manual / auto-detect / file upload), edit, delete.
-   - **Scan page**: pick a network, start/stop scan, live progress, real-time device list.
-   - **Results page**: sortable/filterable device table, status badges, search, export.
-   - **Device details**: full history timeline, port list, vendor, last seen.
-   - **Dashboard**: total devices, online now, newly discovered, missing since last scan, simple charts.
+   - **Scan page**: pick a network, start/stop scan, live progress bar, real-time device list.
+   - **Results page**: DataGrid of devices, status chips, search, export.
+   - **Device details**: MUI Timeline of history, port list, vendor, last seen.
+   - **Dashboard**: stat cards for total devices, online now, newly discovered, missing since last scan, plus simple charts.
 
 5. **Design direction**
-   - Dark, technical, command-center aesthetic.
-   - High-contrast status colors (online green, offline gray, alert amber).
-   - Clean data tables, monospace for IP/MAC addresses, compact spacing.
+   - Dark, technical, command-center aesthetic built on a custom MUI dark theme.
+   - High-contrast status colors (online green, offline gray, alert amber) defined as theme palette entries.
+   - Clean dense data tables, monospace for IP/MAC addresses, compact spacing.
 
-6. **Packaging**
+6. **Packaging: Electron desktop app**
    - Build the frontend and package with `@electron/packager`.
    - Produce Linux x64 first; macOS and Windows can follow the same flow.
    - Archive the result to `/mnt/documents/` for download.
+
+7. **Packaging: Docker container**
+   - A headless variant of the same app: the scanner engine plus a small web server serving the React UI, no Electron shell.
+   - Multi-stage `Dockerfile`: stage 1 builds the React frontend, stage 2 runs a slim Node image with the scanner and server.
+   - Install `iputils-ping` and `iproute2` in the image so ping and ARP lookups work.
+   - Run with `--network host` (or `--cap-add=NET_RAW --cap-add=NET_ADMIN`) so the container can actually see your LAN.
+   - Persist the SQLite database through a named volume mounted at `/data`.
+   - Provide a `docker-compose.yml` with host networking, the volume, a port mapping, and env vars for scan interval and default subnet.
+   - Shared code layout so the scanner and database modules are used by both the Electron main process and the Docker server — one engine, two shells.
+
 
 ## First milestone
 
