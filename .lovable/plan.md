@@ -11,25 +11,28 @@ A local desktop app that scans your network, keeps a history of every discovered
 - Users can add networks by typing a CIDR/subnet, picking the auto-detected local network, or uploading a list of IPs.
 - The dashboard shows the current scan, device details (IP, hostname, MAC, vendor, online status, open ports), and a history comparison (new, missing, status changes).
 
-
 ## Why local SQLite instead of Lovable Cloud
 
-Because this is a desktop app that scans the user's local network, the data naturally lives on that machine. SQLite keeps everything offline, private, and fast. Lovable Cloud can be added later if cloud sync or multi-device access is needed.
+Because this app scans your local network, the data naturally lives on that machine. SQLite keeps everything offline, private, and fast. Lovable Cloud can be added later if cloud sync or multi-device access is needed.
 
 ## Technical architecture
 
+One shared scanner + database core, two shells around it.
+
 ```text
-┌──────────────────────────────┐
-│  React frontend (TanStack)   │  ← UI, tables, charts, controls
-│  talks to main process via IPC │
-└──────────────┬───────────────┘
-               │
-┌──────────────▼───────────────┐
-│  Electron main process (Node)│  ← scanning, SQLite, file I/O
-│  - ping / arp / port scan    │
-│  - SQLite database           │
-└──────────────────────────────┘
+        ┌──────────────────────────────┐
+        │  React + Material UI frontend │  ← UI, DataGrid, charts, controls
+        └───────┬───────────────┬───────┘
+        IPC     │               │   HTTP
+        ┌───────▼──────┐  ┌─────▼─────────────┐
+        │ Electron main │  │ Docker: Node server│
+        └───────┬──────┘  └─────┬─────────────┘
+                └───────┬───────┘
+                ┌───────▼────────┐
+                │  Shared core   │  ← ping / arp / port scan + SQLite
+                └────────────────┘
 ```
+
 
 ## Database schema
 
