@@ -11,7 +11,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { createService } = require("../core/service.cjs");
 
-const PORT = Number(process.env["NETSCAN_PORT"] || 8porary || 8099) || 8099;
+const PORT = Number(process.env["NETSCAN_PORT"] || 8099) || 8099;
 const HOST = process.env["NETSCAN_HOST"] || "0.0.0.0";
 const DATA_DIR = process.env["NETSCAN_DATA_DIR"] || path.join(process.cwd(), "data");
 const STATIC_DIR =
