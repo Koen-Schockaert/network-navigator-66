@@ -1,5 +1,5 @@
 import AddIcon from "@mui/icons-material/Add";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import RadarIcon from "@mui/icons-material/Radar";
 import UploadFileIcon from "@mui/icons-material/UploadFile";

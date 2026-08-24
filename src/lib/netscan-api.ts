@@ -41,7 +41,7 @@ type DesktopBridge = {
   onEvent(handler: (event: NetscanEvent) => void): () => void;
 };
 
-export type NetworkInput = { name?: string; cidr: string; source?: string };
+export type NetworkInput = { name?: string | undefined; cidr: string; source?: string | undefined };
 export type TargetPreview = {
   valid: boolean;
   count: number;
