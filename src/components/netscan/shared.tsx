@@ -110,7 +110,7 @@ export function PortChips({
   const shown = ports.slice(0, max);
   const rest = ports.length - shown.length;
   return (
-    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+    <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: "wrap" }}>
       {shown.map((port) => (
         <Tooltip key={port} title={labels[String(port)] || `Port ${port}`}>
           <Chip size="small" label={port} sx={{ fontFamily: mono }} />
