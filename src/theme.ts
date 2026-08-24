@@ -82,7 +82,7 @@ export const theme = createTheme({
     MuiChip: {
       styleOverrides: {
         root: { fontWeight: 600, borderRadius: 6 },
-        labelSmall: { fontSize: 11 },
+        sizeSmall: { fontSize: 11 },
       },
     },
     MuiTextField: { defaultProps: { size: "small" } },
