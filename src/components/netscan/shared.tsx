@@ -72,7 +72,7 @@ export function StatCard({
         }}
       />
       <CardContent sx={{ py: 2.25 }}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between">
+        <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between" }}>
           <Typography variant="overline" color="text.secondary">
             {label}
           </Typography>
