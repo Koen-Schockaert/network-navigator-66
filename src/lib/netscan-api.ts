@@ -155,7 +155,11 @@ export const netscan = {
     const desktop = bridge();
     if (desktop) return desktop.createNetwork(input);
     if (await hasServer()) return send<NetworkRow>("/networks", "POST", input);
-    return demoBackend.createNetwork(input);
+    return demoBackend.createNetwork({
+      cidr: input.cidr,
+      ...(input.name ? { name: input.name } : {}),
+      ...(input.source ? { source: input.source } : {}),
+    });
   },
 
   async updateNetwork(id: string, patch: Partial<NetworkRow>) {
