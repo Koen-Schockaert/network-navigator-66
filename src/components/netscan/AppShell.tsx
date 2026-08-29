@@ -65,22 +65,27 @@ export function AppShell() {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const [nextDashboard, nextNetworks, nextDevices, nextScans, nextHistory, status] =
-      await Promise.all([
-        netscan.getDashboard(),
-        netscan.listNetworks(),
-        netscan.listDevices(),
-        netscan.listScans(),
-        netscan.listHistory(),
-        netscan.getScanStatus(),
-      ]);
-    setDashboard(nextDashboard);
-    setNetworks(nextNetworks);
-    setDevices(nextDevices);
-    setScans(nextScans);
-    setHistory(nextHistory);
-    setProgress(status);
-    setLoading(false);
+    try {
+      const [nextDashboard, nextNetworks, nextDevices, nextScans, nextHistory, status] =
+        await Promise.all([
+          netscan.getDashboard(),
+          netscan.listNetworks(),
+          netscan.listDevices(),
+          netscan.listScans(),
+          netscan.listHistory(),
+          netscan.getScanStatus(),
+        ]);
+      setDashboard(nextDashboard);
+      setNetworks(nextNetworks);
+      setDevices(nextDevices);
+      setScans(nextScans);
+      setHistory(nextHistory);
+      setProgress(status);
+    } catch (error) {
+      console.error("netscan: failed to load data", error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
