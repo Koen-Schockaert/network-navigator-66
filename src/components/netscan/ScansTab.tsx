@@ -136,7 +136,7 @@ export function ScansTab({ scans, networks, history }: Props) {
                     <Typography variant="body2" noWrap>
                       {HISTORY_LABELS[entry.event] || entry.event}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary" noWrap display="block">
+                    <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
                       {entry.detail} · {relativeTime(entry.created_at)}
                     </Typography>
                   </Box>
