@@ -100,7 +100,7 @@ export function AppShell() {
   useEffect(() => {
     return netscan.subscribe((event) => {
       if (event.type === "scan:progress") {
-        setProgress({ running: true, ...(event as unknown as ScanProgress) });
+        setProgress({ ...(event as unknown as ScanProgress), running: true });
         return;
       }
       if (event.type === "scan:started") {
