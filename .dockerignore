@@ -1,0 +1,10 @@
+node_modules
+dist
+dist-app
+electron-release
+.git
+.lovable
+.output
+.nitro
+.vinxi
+*.log

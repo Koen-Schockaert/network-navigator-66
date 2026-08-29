@@ -70,7 +70,13 @@ async function hasServer(): Promise<boolean> {
   if (serverAvailable !== null) return serverAvailable;
   try {
     const response = await fetch("/api/info", { signal: AbortSignal.timeout(1500) });
-    serverAvailable = response.ok;
+    const contentType = response.headers.get("content-type") || "";
+    // A dev/SPA fallback answers with HTML — only real JSON means the engine is there.
+    serverAvailable = response.ok && contentType.includes("application/json");
+    if (serverAvailable) {
+      const payload = (await response.clone().json().catch(() => null)) as Info | null;
+      serverAvailable = Boolean(payload && typeof payload.backend === "string");
+    }
   } catch {
     serverAvailable = false;
   }

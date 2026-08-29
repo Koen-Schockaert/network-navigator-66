@@ -9,7 +9,16 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "build:app": "vite build --config vite.app.config.mts",
+    "electron": "npm run build:app && electron .",
+    "electron:dev": "NETSCAN_DEV_SERVER=http://localhost:8080 electron .",
+    "server": "npm run build:app && node server/index.cjs",
+    "package:linux": "npm run build:app && electron-packager . NetScan --platform=linux --arch=x64 --out=electron-release --overwrite --ignore=\"node_modules\" --ignore=\"^/src\" --ignore=\"^/app\" --ignore=\"^/public\" --ignore=\"^/electron-release\"",
+    "package:win": "npm run build:app && electron-packager . NetScan --platform=win32 --arch=x64 --out=electron-release --overwrite --ignore=\"node_modules\" --ignore=\"^/src\" --ignore=\"^/app\" --ignore=\"^/public\" --ignore=\"^/electron-release\"",
+    "package:mac": "npm run build:app && electron-packager . NetScan --platform=darwin --arch=arm64 --out=electron-release --overwrite --ignore=\"node_modules\" --ignore=\"^/src\" --ignore=\"^/app\" --ignore=\"^/public\" --ignore=\"^/electron-release\"",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d"
   },
   "overrides": {
     "rolldown": "1.2.1"
@@ -92,5 +101,6 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
     "vite": "8.1.5"
-  }
+  },
+  "main": "electron/main.cjs"
 }

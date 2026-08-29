@@ -1,0 +1,21 @@
+services:
+  netscan:
+    build: .
+    container_name: netscan
+    restart: unless-stopped
+    # Host networking is required so the scanner can see your real LAN and
+    # read the host ARP table. On Docker Desktop (macOS/Windows) host mode is
+    # limited — the Electron desktop app gives better results there.
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    environment:
+      NETSCAN_PORT: "8099"
+      NETSCAN_HOST: "0.0.0.0"
+      NETSCAN_DATA_DIR: "/data"
+    volumes:
+      - netscan-data:/data
+
+volumes:
+  netscan-data:
