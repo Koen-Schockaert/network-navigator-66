@@ -255,8 +255,10 @@ export function AppShell() {
 
           {loading ? <LinearProgress sx={{ mb: 2 }} /> : null}
 
-          {tab === 0 ? <DashboardTab data={dashboard} /> : null}
-          {tab === 1 ? (
+          <Box sx={{ display: tab === 0 ? "block" : "none" }}>
+            <DashboardTab data={dashboard} />
+          </Box>
+          <Box sx={{ display: tab === 1 ? "block" : "none" }}>
             <DevicesTab
               devices={visibleDevices}
               networks={networks}
@@ -268,8 +270,8 @@ export function AppShell() {
               onNetworkFilter={setNetworkFilter}
               onRefresh={refresh}
             />
-          ) : null}
-          {tab === 2 ? (
+          </Box>
+          <Box sx={{ display: tab === 2 ? "block" : "none" }}>
             <NetworksTab
               networks={networks}
               info={info}
@@ -277,16 +279,18 @@ export function AppShell() {
               onRefresh={refresh}
               onScan={startScan}
             />
-          ) : null}
-          {tab === 3 ? <ScansTab scans={scans} networks={networks} history={history} /> : null}
-          {tab === 4 ? (
+          </Box>
+          <Box sx={{ display: tab === 3 ? "block" : "none" }}>
+            <ScansTab scans={scans} networks={networks} history={history} />
+          </Box>
+          <Box sx={{ display: tab === 4 ? "block" : "none" }}>
             <CredentialsTab
               credentials={credentials}
               devices={devices}
               vaultStatus={vaultStatus}
               onRefresh={refresh}
             />
-          ) : null}
+          </Box>
 
           <Typography
             variant="caption"

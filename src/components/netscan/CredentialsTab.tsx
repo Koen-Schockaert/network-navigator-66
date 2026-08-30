@@ -23,7 +23,7 @@ import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { buildCredentialUrl, protocolMeta } from "@/lib/credential-protocols";
 import { netscan } from "@/lib/netscan-api";
 import type { CredentialRow, DeviceRow, VaultStatus } from "@/lib/netscan-types";
@@ -49,7 +49,10 @@ export function CredentialsTab({ credentials, devices, vaultStatus, onRefresh }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vaultStatus.unlocked]);
 
-  const deviceById = new Map(devices.map((device) => [device.id, device]));
+  const deviceById = useMemo(
+    () => new Map(devices.map((device) => [device.id, device])),
+    [devices],
+  );
 
   async function handleDelete() {
     if (!deleteTarget) return;
@@ -63,127 +66,132 @@ export function CredentialsTab({ credentials, devices, vaultStatus, onRefresh }:
     }
   }
 
-  const columns: GridColDef<CredentialRow>[] = [
-    { field: "label", headerName: "Label", flex: 1, minWidth: 160 },
-    {
-      field: "device_id",
-      headerName: "Device",
-      width: 180,
-      valueGetter: (_value, row) => {
-        const device = deviceById.get(row.device_id);
-        return device ? device.label || device.hostname || device.ip : "Unknown device";
+  const columns: GridColDef<CredentialRow>[] = useMemo(
+    () => [
+      { field: "label", headerName: "Label", flex: 1, minWidth: 160 },
+      {
+        field: "device_id",
+        headerName: "Device",
+        width: 180,
+        valueGetter: (_value, row) => {
+          const device = deviceById.get(row.device_id);
+          return device ? device.label || device.hostname || device.ip : "Unknown device";
+        },
       },
-    },
-    {
-      field: "protocol",
-      headerName: "Protocol",
-      width: 130,
-      renderCell: (params) => {
-        const meta = protocolMeta(params.row.protocol);
-        const Icon = meta.icon;
-        return (
-          <Chip
-            size="small"
-            variant="outlined"
-            icon={<Icon fontSize="small" />}
-            label={meta.label}
-          />
-        );
+      {
+        field: "protocol",
+        headerName: "Protocol",
+        width: 130,
+        renderCell: (params) => {
+          const meta = protocolMeta(params.row.protocol);
+          const Icon = meta.icon;
+          return (
+            <Chip
+              size="small"
+              variant="outlined"
+              icon={<Icon fontSize="small" />}
+              label={meta.label}
+            />
+          );
+        },
       },
-    },
-    {
-      field: "secret_type",
-      headerName: "Auth",
-      width: 90,
-      renderCell: (params) =>
-        params.row.secret_type === "ssh_key" ? (
-          <Tooltip title="SSH key">
-            <KeyIcon fontSize="small" color="action" />
-          </Tooltip>
-        ) : (
-          <Tooltip title="Password">
-            <LockIcon fontSize="small" color="action" />
-          </Tooltip>
-        ),
-    },
-    {
-      field: "host_override",
-      headerName: "Host",
-      width: 150,
-      valueGetter: (_value, row) => row.host_override || deviceById.get(row.device_id)?.ip || "—",
-    },
-    {
-      field: "port",
-      headerName: "Port",
-      width: 90,
-      valueGetter: (_value, row) => row.port ?? "—",
-    },
-    {
-      field: "username",
-      headerName: "Username",
-      width: 140,
-      valueGetter: (_value, row) => row.username ?? "—",
-    },
-    {
-      field: "updated_at",
-      headerName: "Updated",
-      width: 110,
-      valueGetter: (_value, row) => relativeTime(row.updated_at),
-    },
-    {
-      field: "actions",
-      headerName: "Actions",
-      width: 180,
-      sortable: false,
-      renderCell: (params) => {
-        const row = params.row;
-        const device = deviceById.get(row.device_id);
-        const host = row.host_override || device?.ip || null;
-        const url = buildCredentialUrl(row.protocol, host, row.port);
-        const secret = revealed[row.id];
-        return (
-          <Stack direction="row" spacing={0.25}>
-            <Tooltip title={vaultStatus.unlocked ? "Reveal secret" : "Unlock the vault to reveal"}>
-              <span>
-                <IconButton
-                  size="small"
-                  disabled={!vaultStatus.unlocked}
-                  onClick={() => (secret ? hide(row.id) : reveal(row.id))}
-                >
-                  {secret ? (
-                    <VisibilityOffIcon fontSize="small" />
-                  ) : (
-                    <VisibilityIcon fontSize="small" />
-                  )}
+      {
+        field: "secret_type",
+        headerName: "Auth",
+        width: 90,
+        renderCell: (params) =>
+          params.row.secret_type === "ssh_key" ? (
+            <Tooltip title="SSH key">
+              <KeyIcon fontSize="small" color="action" />
+            </Tooltip>
+          ) : (
+            <Tooltip title="Password">
+              <LockIcon fontSize="small" color="action" />
+            </Tooltip>
+          ),
+      },
+      {
+        field: "host_override",
+        headerName: "Host",
+        width: 150,
+        valueGetter: (_value, row) => row.host_override || deviceById.get(row.device_id)?.ip || "—",
+      },
+      {
+        field: "port",
+        headerName: "Port",
+        width: 90,
+        valueGetter: (_value, row) => row.port ?? "—",
+      },
+      {
+        field: "username",
+        headerName: "Username",
+        width: 140,
+        valueGetter: (_value, row) => row.username ?? "—",
+      },
+      {
+        field: "updated_at",
+        headerName: "Updated",
+        width: 110,
+        valueGetter: (_value, row) => relativeTime(row.updated_at),
+      },
+      {
+        field: "actions",
+        headerName: "Actions",
+        width: 180,
+        sortable: false,
+        renderCell: (params) => {
+          const row = params.row;
+          const device = deviceById.get(row.device_id);
+          const host = row.host_override || device?.ip || null;
+          const url = buildCredentialUrl(row.protocol, host, row.port);
+          const secret = revealed[row.id];
+          return (
+            <Stack direction="row" spacing={0.25}>
+              <Tooltip
+                title={vaultStatus.unlocked ? "Reveal secret" : "Unlock the vault to reveal"}
+              >
+                <span>
+                  <IconButton
+                    size="small"
+                    disabled={!vaultStatus.unlocked}
+                    onClick={() => (secret ? hide(row.id) : reveal(row.id))}
+                  >
+                    {secret ? (
+                      <VisibilityOffIcon fontSize="small" />
+                    ) : (
+                      <VisibilityIcon fontSize="small" />
+                    )}
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title={url ? "Open in browser" : "Not available for this protocol"}>
+                <span>
+                  <IconButton
+                    size="small"
+                    disabled={!url}
+                    onClick={() => url && window.open(url, "_blank", "noopener")}
+                  >
+                    <OpenInNewIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title="Edit">
+                <IconButton size="small" onClick={() => setEditingCredential(row)}>
+                  <EditIcon fontSize="small" />
                 </IconButton>
-              </span>
-            </Tooltip>
-            <Tooltip title={url ? "Open in browser" : "Not available for this protocol"}>
-              <span>
-                <IconButton
-                  size="small"
-                  disabled={!url}
-                  onClick={() => url && window.open(url, "_blank", "noopener")}
-                >
-                  <OpenInNewIcon fontSize="small" />
+              </Tooltip>
+              <Tooltip title="Delete">
+                <IconButton size="small" onClick={() => setDeleteTarget(row)}>
+                  <DeleteOutlineIcon fontSize="small" />
                 </IconButton>
-              </span>
-            </Tooltip>
-            <Tooltip title="Edit">
-              <IconButton size="small" onClick={() => setEditingCredential(row)}>
-                <EditIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Delete">
-              <IconButton size="small" onClick={() => setDeleteTarget(row)}>
-                <DeleteOutlineIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Stack>
-        );
+              </Tooltip>
+            </Stack>
+          );
+        },
       },
-    },
-  ];
+    ],
+    [deviceById, revealed, vaultStatus.unlocked, hide, reveal],
+  );
 
   return (
     <Stack spacing={2}>

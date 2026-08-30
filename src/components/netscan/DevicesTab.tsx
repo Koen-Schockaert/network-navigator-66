@@ -82,7 +82,7 @@ export function DevicesTab({
     () => devices.find((device) => device.id === selectedId) ?? null,
     [devices, selectedId],
   );
-  const labels = info?.portLabels ?? {};
+  const labels = useMemo(() => info?.portLabels ?? {}, [info?.portLabels]);
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -97,86 +97,90 @@ export function DevicesTab({
     });
   }, [devices, search, status, categoryFilter]);
 
-  const columns: GridColDef<DeviceRow>[] = [
-    {
-      field: "online",
-      headerName: "Status",
-      width: 120,
-      renderCell: (params) => <StatusChip online={Boolean(params.value)} />,
-      sortable: true,
-    },
-    {
-      field: "label",
-      headerName: "Label",
-      width: 150,
-      valueGetter: (_value, row) => row.label ?? "—",
-    },
-    {
-      field: "category",
-      headerName: "Category",
-      width: 170,
-      valueGetter: (_value, row) => categoryMeta(row.category).label,
-      renderCell: (params) => {
-        const meta = categoryMeta((params.row as DeviceRow).category);
-        const Icon = meta.icon;
-        return (
-          <Chip
-            size="small"
-            variant="outlined"
-            icon={<Icon fontSize="small" />}
-            label={meta.label}
-          />
-        );
+  const columns: GridColDef<DeviceRow>[] = useMemo(
+    () => [
+      {
+        field: "online",
+        headerName: "Status",
+        width: 120,
+        renderCell: (params) => <StatusChip online={Boolean(params.value)} />,
+        sortable: true,
       },
-    },
-    {
-      field: "ip",
-      headerName: "IP address",
-      width: 140,
-      renderCell: (params) => <Mono>{params.value as string}</Mono>,
-    },
-    {
-      field: "hostname",
-      headerName: "Hostname",
-      flex: 1,
-      minWidth: 160,
-      valueGetter: (_value, row) => row.hostname ?? "—",
-    },
-    {
-      field: "mac",
-      headerName: "MAC",
-      width: 170,
-      renderCell: (params) => <Mono>{(params.value as string) || "—"}</Mono>,
-    },
-    {
-      field: "vendor",
-      headerName: "Vendor",
-      width: 150,
-      valueGetter: (_value, row) => row.vendor ?? "Unknown",
-    },
-    {
-      field: "open_ports",
-      headerName: "Open ports",
-      flex: 1,
-      minWidth: 200,
-      sortable: false,
-      renderCell: (params) => (
-        <PortChips ports={(params.value as number[]) ?? []} labels={labels} max={4} />
-      ),
-    },
-    {
-      field: "response_time",
-      headerName: "Latency",
-      width: 110,
-      valueGetter: (_value, row) => (row.response_time === null ? "—" : `${row.response_time} ms`),
-    },
-    {
-      field: "last_seen",
-      headerName: "Last seen",
-      width: 130,
-      valueGetter: (_value, row) => relativeTime(row.last_seen),
-    },
-  ];
+      {
+        field: "label",
+        headerName: "Label",
+        width: 150,
+        valueGetter: (_value, row) => row.label ?? "—",
+      },
+      {
+        field: "category",
+        headerName: "Category",
+        width: 170,
+        valueGetter: (_value, row) => categoryMeta(row.category).label,
+        renderCell: (params) => {
+          const meta = categoryMeta((params.row as DeviceRow).category);
+          const Icon = meta.icon;
+          return (
+            <Chip
+              size="small"
+              variant="outlined"
+              icon={<Icon fontSize="small" />}
+              label={meta.label}
+            />
+          );
+        },
+      },
+      {
+        field: "ip",
+        headerName: "IP address",
+        width: 140,
+        renderCell: (params) => <Mono>{params.value as string}</Mono>,
+      },
+      {
+        field: "hostname",
+        headerName: "Hostname",
+        flex: 1,
+        minWidth: 160,
+        valueGetter: (_value, row) => row.hostname ?? "—",
+      },
+      {
+        field: "mac",
+        headerName: "MAC",
+        width: 170,
+        renderCell: (params) => <Mono>{(params.value as string) || "—"}</Mono>,
+      },
+      {
+        field: "vendor",
+        headerName: "Vendor",
+        width: 150,
+        valueGetter: (_value, row) => row.vendor ?? "Unknown",
+      },
+      {
+        field: "open_ports",
+        headerName: "Open ports",
+        flex: 1,
+        minWidth: 200,
+        sortable: false,
+        renderCell: (params) => (
+          <PortChips ports={(params.value as number[]) ?? []} labels={labels} max={4} />
+        ),
+      },
+      {
+        field: "response_time",
+        headerName: "Latency",
+        width: 110,
+        valueGetter: (_value, row) =>
+          row.response_time === null ? "—" : `${row.response_time} ms`,
+      },
+      {
+        field: "last_seen",
+        headerName: "Last seen",
+        width: 130,
+        valueGetter: (_value, row) => relativeTime(row.last_seen),
+      },
+    ],
+    [labels],
+  );
 
   const deviceHistory = selected ? history.filter((entry) => entry.device_id === selected.id) : [];
   const deviceCredentials = selected
