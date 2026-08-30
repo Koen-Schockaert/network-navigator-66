@@ -437,6 +437,7 @@ async function scanNetwork(target, options = {}) {
     onProgress,
   } = options;
 
+  clearHostnameCache();
   const hosts = expandTargets(target);
   const startedAt = new Date().toISOString();
   const devices = [];
@@ -543,5 +544,6 @@ module.exports = {
   pingHost,
   readArpTable,
   resolveHostname,
+  clearHostnameCache,
   scanNetwork,
 };
