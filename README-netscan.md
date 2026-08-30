@@ -24,6 +24,18 @@ Packaging uses [electron-builder](https://www.electron.build/) (config in `elect
 `core/` has no npm runtime dependencies (Node builtins only), so the packaged app ships
 `electron/`, `core/` and the built `dist-app/` SPA with no `node_modules`.
 
+On macOS, pick the `.dmg` matching your Mac's chip — `-arm64` for Apple Silicon,
+`-x64` for Intel. Installing the wrong one still runs, just under Rosetta 2 translation,
+which makes the whole app noticeably slow.
+
+Builds aren't code-signed/notarized, so macOS Gatekeeper will refuse to open the app
+("NetScan is damaged and can't be opened. Move it to the Trash.") after installing it.
+This is not actual corruption — clear the quarantine flag and it opens normally:
+
+```bash
+xattr -cr /Applications/NetScan.app
+```
+
 ## Releases (alpha / beta / stable)
 
 `alpha` / `beta` / `main` branches map to three release channels; pushing a version tag builds

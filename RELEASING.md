@@ -95,7 +95,16 @@ moved tag, and cancel any stale/duplicate runs from the earlier attempts with
   and the built `dist-app/` SPA — no `node_modules`.
 - `package.json`'s `author` field must be in `"Name <email>"` form — electron-builder's Linux
   `.deb` target fails the build without an email in it.
-- No code signing is configured. macOS builds are unsigned (Gatekeeper will warn on first
-  launch); Windows builds are unsigned (SmartScreen will warn). Add signing certificates as
-  GitHub Actions secrets and wire them into `electron-builder.yml`'s `mac.identity` /
-  `win.certificateFile` if that's ever needed.
+- No code signing is configured. Windows builds are unsigned (SmartScreen will warn). macOS
+  builds are unsigned and unnotarized, which on current macOS means Gatekeeper outright refuses
+  to open them ("NetScan is damaged and can't be opened. Move it to the Trash.") rather than
+  showing the older "unidentified developer" bypass prompt. This isn't corruption — it's the
+  `com.apple.quarantine` flag macOS stamps on anything downloaded via a browser. Clear it after
+  installing: `xattr -cr /Applications/NetScan.app`. Add signing certificates as GitHub Actions
+  secrets and wire them into `electron-builder.yml`'s `mac.identity` / `win.certificateFile` /
+  notarization config to remove this step entirely.
+- Every macOS artifact name always carries its arch (`-arm64` / `-x64`, forced via
+  `artifactName` in `electron-builder.yml`) — installing the wrong one for your Mac's chip
+  still runs, just under Rosetta 2 translation, which makes the whole app uniformly slow
+  (confirmed in practice via `sample <pid>` on a running instance showing near-100% CPU
+  entirely in Rosetta runtime routines).
