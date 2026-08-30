@@ -2,7 +2,7 @@
   "name": "netscan",
   "version": "1.0.0",
   "description": "Local network device inventory scanner (Electron + Docker)",
-  "author": "Koen Schockaert",
+  "author": "Koen Schockaert <koen.schockaert@gmail.com>",
   "private": true,
   "sideEffects": false,
   "type": "module",
