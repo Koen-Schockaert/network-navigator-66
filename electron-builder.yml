@@ -10,6 +10,14 @@ directories:
   output: electron-release
   buildResources: build
 
+# electron-builder's default naming omits the arch suffix for one of the two
+# macOS builds (e.g. "NetScan-1.0.1.dmg" for x64 vs "NetScan-1.0.1-arm64.dmg"),
+# which reads as "the normal one" and "the arm64 one" — easy to misread on an
+# Apple Silicon Mac and grab the Intel build, which then runs the whole
+# Electron/Chromium/V8 engine through Rosetta 2 and is dramatically slower.
+# Always include the arch so every artifact is unambiguous.
+artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+
 files:
   - electron/**/*
   - core/**/*
