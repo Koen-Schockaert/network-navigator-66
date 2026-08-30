@@ -372,11 +372,44 @@ async function tryDig(ip) {
  * speed/reliability: reverse DNS -> hosts/NSS -> mDNS -> NetBIOS -> explicit PTR.
  * Results (including misses) are cached for the lifetime of the process.
  */
+/** 6. Native mDNS reverse lookup (no CLI tools needed). */
+async function tryNativeMdns(ip) {
+  return cleanName(await mdnsReverse(ip));
+}
+
+/** 7. Native NetBIOS node status query (no CLI tools needed). */
+async function tryNativeNetbios(ip) {
+  return cleanName(await netbiosName(ip));
+}
+
+/** 8. Native PTR query straight at the router / local resolvers. */
+async function tryNativeDnsPtr(ip) {
+  for (const server of localResolvers()) {
+    try {
+      const name = cleanName(await dnsPtr(ip, server));
+      if (name) return name;
+    } catch {
+      /* try the next resolver */
+    }
+  }
+  return null;
+}
+
 async function resolveHostname(ip) {
   if (hostnameCache.has(ip)) return hostnameCache.get(ip);
 
   let name = null;
-  for (const strategy of [tryReverseDns, tryGetent, tryMdns, tryNetbios, tryDig]) {
+  const strategies = [
+    tryReverseDns,
+    tryGetent,
+    tryNativeMdns,
+    tryNativeNetbios,
+    tryNativeDnsPtr,
+    tryMdns,
+    tryNetbios,
+    tryDig,
+  ];
+  for (const strategy of strategies) {
     try {
       name = await strategy(ip);
     } catch {
@@ -388,6 +421,7 @@ async function resolveHostname(ip) {
   hostnameCache.set(ip, name);
   return name;
 }
+
 
 /** Drop cached lookups so a fresh scan re-resolves names. */
 function clearHostnameCache() {
