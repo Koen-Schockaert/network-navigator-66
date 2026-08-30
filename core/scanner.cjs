@@ -263,15 +263,137 @@ async function pingHost(ip, timeoutMs = 1000) {
   return timeMatch ? Number(timeMatch[1]) : Date.now() - started;
 }
 
-/** Reverse-DNS lookup; returns a hostname or null. */
-async function resolveHostname(ip) {
+const hostnameCache = new Map();
+const toolAvailability = new Map();
+
+function cleanName(raw) {
+  if (!raw) return null;
+  let name = String(raw).trim().replace(/\.$/, "");
+  if (!name || name.length > 253) return null;
+  if (isIpv4(name)) return null;
+  if (/^(?:in-addr\.arpa|localhost|unknown|failed|name or service not known)$/i.test(name)) {
+    return null;
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(name)) return null;
+  // Strip a trailing local search domain duplicate like "nas.local.local"
+  name = name.replace(/(\.local)+$/i, ".local");
+  return name;
+}
+
+/** Check once whether a CLI helper exists on this machine. */
+async function hasTool(tool) {
+  if (toolAvailability.has(tool)) return toolAvailability.get(tool);
+  const probe =
+    process.platform === "win32" ? `where ${tool}` : `command -v ${tool} 2>/dev/null`;
+  const output = await run(probe);
+  const available = Boolean(output && output.trim());
+  toolAvailability.set(tool, available);
+  return available;
+}
+
+/** 1. Standard reverse DNS through the configured resolvers. */
+async function tryReverseDns(ip) {
   try {
     const names = await dns.reverse(ip);
-    return names && names.length ? names[0] : null;
+    return cleanName(names && names[0]);
   } catch {
     return null;
   }
 }
+
+/** 2. /etc/hosts, NSS and mDNS via getent (Linux/macOS). */
+async function tryGetent(ip) {
+  if (process.platform === "win32") return null;
+  if (!(await hasTool("getent"))) return null;
+  const output = await run(`getent hosts ${ip}`);
+  const parts = output.trim().split(/\s+/);
+  return parts.length > 1 ? cleanName(parts[1]) : null;
+}
+
+/** 3. mDNS / Bonjour (Apple TV, printers, NAS, IoT). */
+async function tryMdns(ip) {
+  if (await hasTool("avahi-resolve")) {
+    const output = await run(`avahi-resolve -a ${ip}`);
+    const parts = output.trim().split(/\s+/);
+    if (parts.length > 1) {
+      const name = cleanName(parts[1]);
+      if (name) return name;
+    }
+  }
+  if (process.platform === "darwin" && (await hasTool("dscacheutil"))) {
+    const output = await run(`dscacheutil -q host -a ip_address ${ip}`);
+    const match = output.match(/name:\s*(\S+)/i);
+    if (match) {
+      const name = cleanName(match[1]);
+      if (name) return name;
+    }
+  }
+  return null;
+}
+
+/** 4. NetBIOS names (Windows machines, Samba shares, printers). */
+async function tryNetbios(ip) {
+  if (process.platform === "win32") {
+    const output = await run(`nbtstat -A ${ip}`);
+    const match = output.match(/^\s*(\S+)\s+<00>\s+UNIQUE/im);
+    return match ? cleanName(match[1]) : null;
+  }
+  if (!(await hasTool("nmblookup"))) return null;
+  const output = await run(`nmblookup -A ${ip}`);
+  for (const line of output.split("\n")) {
+    const match = line.match(/^\s*(\S+)\s+<00>\s+-\s+([BMH]\s+)?<ACTIVE>/i);
+    if (match && !/^GROUP$/i.test(match[1])) {
+      const name = cleanName(match[1]);
+      if (name) return name;
+    }
+  }
+  return null;
+}
+
+/** 5. Explicit PTR query against the local resolvers / router. */
+async function tryDig(ip) {
+  if (process.platform === "win32") return null;
+  if (await hasTool("dig")) {
+    const output = await run(`dig +short +time=1 +tries=1 -x ${ip}`);
+    const first = output.split("\n").map((l) => l.trim()).filter(Boolean)[0];
+    const name = cleanName(first);
+    if (name) return name;
+  }
+  if (await hasTool("host")) {
+    const output = await run(`host -W 1 ${ip}`);
+    const match = output.match(/domain name pointer\s+(\S+)/i);
+    if (match) return cleanName(match[1]);
+  }
+  return null;
+}
+
+/**
+ * Resolve a hostname using every method available on this machine, in order of
+ * speed/reliability: reverse DNS -> hosts/NSS -> mDNS -> NetBIOS -> explicit PTR.
+ * Results (including misses) are cached for the lifetime of the process.
+ */
+async function resolveHostname(ip) {
+  if (hostnameCache.has(ip)) return hostnameCache.get(ip);
+
+  let name = null;
+  for (const strategy of [tryReverseDns, tryGetent, tryMdns, tryNetbios, tryDig]) {
+    try {
+      name = await strategy(ip);
+    } catch {
+      name = null;
+    }
+    if (name) break;
+  }
+
+  hostnameCache.set(ip, name);
+  return name;
+}
+
+/** Drop cached lookups so a fresh scan re-resolves names. */
+function clearHostnameCache() {
+  hostnameCache.clear();
+}
+
 
 /* ------------------------------------------------------------------ */
 /* Scan orchestration                                                  */
@@ -315,6 +437,7 @@ async function scanNetwork(target, options = {}) {
     onProgress,
   } = options;
 
+  clearHostnameCache();
   const hosts = expandTargets(target);
   const startedAt = new Date().toISOString();
   const devices = [];
@@ -421,5 +544,6 @@ module.exports = {
   pingHost,
   readArpTable,
   resolveHostname,
+  clearHostnameCache,
   scanNetwork,
 };
