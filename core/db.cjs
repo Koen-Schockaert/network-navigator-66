@@ -12,6 +12,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { guessCategory } = require("./category.cjs");
 
 function nowIso() {
   return new Date().toISOString();
@@ -36,6 +37,8 @@ function createJsonBackend(file) {
     devices: [],
     scan_results: [],
     device_history: [],
+    vault_meta: [],
+    credentials: [],
   };
 
   let state = { ...empty };
@@ -113,6 +116,8 @@ const TABLE_COLUMNS = {
     "first_seen",
     "last_seen",
     "notes",
+    "label",
+    "category",
   ],
   scan_results: [
     "id",
@@ -124,13 +129,34 @@ const TABLE_COLUMNS = {
     "open_ports",
     "created_at",
   ],
-  device_history: [
+  device_history: ["id", "device_id", "scan_id", "event", "detail", "created_at"],
+  vault_meta: [
+    "id",
+    "salt",
+    "kdf",
+    "kdf_n",
+    "kdf_r",
+    "kdf_p",
+    "verifier",
+    "verifier_iv",
+    "verifier_tag",
+    "created_at",
+    "updated_at",
+  ],
+  credentials: [
     "id",
     "device_id",
-    "scan_id",
-    "event",
-    "detail",
+    "label",
+    "protocol",
+    "host_override",
+    "port",
+    "username",
+    "secret_type",
+    "secret_ciphertext",
+    "secret_iv",
+    "secret_tag",
     "created_at",
+    "updated_at",
   ],
 };
 
@@ -161,7 +187,8 @@ function createSqliteBackend(file) {
       CREATE TABLE IF NOT EXISTS devices (
         id TEXT PRIMARY KEY, network_id TEXT, ip TEXT, hostname TEXT,
         mac TEXT, vendor TEXT, online INTEGER, response_time REAL,
-        open_ports TEXT, first_seen TEXT, last_seen TEXT, notes TEXT
+        open_ports TEXT, first_seen TEXT, last_seen TEXT, notes TEXT,
+        label TEXT, category TEXT
       );
       CREATE TABLE IF NOT EXISTS scan_results (
         id TEXT PRIMARY KEY, scan_id TEXT, device_id TEXT, ip TEXT,
@@ -171,12 +198,34 @@ function createSqliteBackend(file) {
         id TEXT PRIMARY KEY, device_id TEXT, scan_id TEXT, event TEXT,
         detail TEXT, created_at TEXT
       );
+      CREATE TABLE IF NOT EXISTS vault_meta (
+        id TEXT PRIMARY KEY, salt TEXT, kdf TEXT, kdf_n INTEGER, kdf_r INTEGER, kdf_p INTEGER,
+        verifier TEXT, verifier_iv TEXT, verifier_tag TEXT, created_at TEXT, updated_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS credentials (
+        id TEXT PRIMARY KEY, device_id TEXT, label TEXT, protocol TEXT,
+        host_override TEXT, port INTEGER, username TEXT, secret_type TEXT,
+        secret_ciphertext TEXT, secret_iv TEXT, secret_tag TEXT,
+        created_at TEXT, updated_at TEXT
+      );
       CREATE INDEX IF NOT EXISTS idx_devices_network ON devices(network_id);
       CREATE INDEX IF NOT EXISTS idx_results_scan ON scan_results(scan_id);
       CREATE INDEX IF NOT EXISTS idx_history_device ON device_history(device_id);
+      CREATE INDEX IF NOT EXISTS idx_credentials_device ON credentials(device_id);
     `);
   } catch {
     return null;
+  }
+
+  try {
+    db.exec(`ALTER TABLE devices ADD COLUMN label TEXT`);
+  } catch {
+    // column already exists on databases created before this field was added
+  }
+  try {
+    db.exec(`ALTER TABLE devices ADD COLUMN category TEXT`);
+  } catch {
+    // column already exists on databases created before this field was added
   }
 
   const decode = (table, row) => {
@@ -218,9 +267,7 @@ function createSqliteBackend(file) {
         `INSERT OR REPLACE INTO ${table} (${columns.join(", ")}) VALUES (${columns
           .map((c) => `$${c}`)
           .join(", ")})`,
-      ).run(
-        Object.fromEntries(columns.map((c) => [c, encoded[c] ?? null])),
-      );
+      ).run(Object.fromEntries(columns.map((c) => [c, encoded[c] ?? null])));
       return row;
     },
     update: (table, id, patch) => {
@@ -230,10 +277,7 @@ function createSqliteBackend(file) {
       db.prepare(
         `UPDATE ${table} SET ${keys.map((k) => `${k} = $${k}`).join(", ")} WHERE id = $id`,
       ).run({ ...encoded, id });
-      return decode(
-        table,
-        db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id),
-      );
+      return decode(table, db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id));
     },
     remove: (table, predicate, ids) => {
       const targets = ids
@@ -257,8 +301,13 @@ function createSqliteBackend(file) {
 function createDatabase(options = {}) {
   const file = options.file || path.join(process.cwd(), "data", "netscan.db");
   const backend =
-    createSqliteBackend(file) ||
-    createJsonBackend(file.replace(/\.db$/, "") + ".json");
+    createSqliteBackend(file) || createJsonBackend(file.replace(/\.db$/, "") + ".json");
+
+  const stripSecret = (row) => {
+    if (!row) return row;
+    const { secret_ciphertext, secret_iv, secret_tag, ...meta } = row;
+    return meta;
+  };
 
   const api = {
     backend: backend.kind,
@@ -301,6 +350,10 @@ function createDatabase(options = {}) {
         .map((d) => d.id);
       backend.remove("device_history", (r) => deviceIds.includes(r.device_id));
       backend.remove("scan_results", (r) => scanIds.includes(r.scan_id));
+      // NOTE: there is no standalone deleteDevice - devices are only ever
+      // removed here, via their network's cascade. If a standalone
+      // deleteDevice is ever added, it must cascade credentials too.
+      backend.remove("credentials", (r) => deviceIds.includes(r.device_id));
       backend.remove("devices", (r) => r.network_id === id);
       backend.remove("scan_runs", (r) => r.network_id === id);
       backend.remove("networks", (r) => r.id === id);
@@ -340,15 +393,34 @@ function createDatabase(options = {}) {
 
     /* -------------------------- devices --------------------------- */
     listDevices(networkId) {
-      return backend
-        .all("devices")
-        .filter((d) => !networkId || d.network_id === networkId);
+      return backend.all("devices").filter((d) => !networkId || d.network_id === networkId);
     },
     getDevice(id) {
       return backend.all("devices").find((d) => d.id === id) || null;
     },
     updateDevice(id, patch) {
       return backend.update("devices", id, patch);
+    },
+
+    /**
+     * Apply a hostname discovered by background enrichment (after the scan
+     * that found the device has already finished and moved on). No-ops if
+     * the name hasn't actually changed; records a history entry otherwise,
+     * same as a hostname change discovered mid-scan.
+     */
+    resolveDeviceHostname(id, scanId, hostname) {
+      if (!hostname) return null;
+      const record = backend.all("devices").find((d) => d.id === id);
+      if (!record || record.hostname === hostname) return null;
+      backend.insert("device_history", {
+        id: newId(),
+        device_id: id,
+        scan_id: scanId || null,
+        event: "hostname_changed",
+        detail: `${record.hostname || "unknown"} -> ${hostname}`,
+        created_at: nowIso(),
+      });
+      return backend.update("devices", id, { hostname });
     },
     listDeviceHistory(deviceId) {
       return backend
@@ -365,9 +437,7 @@ function createDatabase(options = {}) {
      * per-scan results and history events. Returns a summary.
      */
     recordScan({ networkId, scanId, hostsScanned, devices }) {
-      const known = backend
-        .all("devices")
-        .filter((d) => d.network_id === networkId);
+      const known = backend.all("devices").filter((d) => d.network_id === networkId);
       const byKey = new Map();
       for (const device of known) {
         byKey.set(device.mac || device.ip, device);
@@ -406,6 +476,12 @@ function createDatabase(options = {}) {
             first_seen: timestamp,
             last_seen: timestamp,
             notes: null,
+            label: null,
+            category: guessCategory({
+              vendor: found.vendor,
+              hostname: found.hostname,
+              openPorts: ports,
+            }),
           };
           backend.insert("devices", record);
           addHistory(record.id, "first_seen", `Discovered at ${found.ip}`);
@@ -416,11 +492,7 @@ function createDatabase(options = {}) {
             addHistory(record.id, "status_change", "Came back online");
           }
           if (record.ip !== found.ip) {
-            addHistory(
-              record.id,
-              "ip_changed",
-              `${record.ip} -> ${found.ip}`,
-            );
+            addHistory(record.id, "ip_changed", `${record.ip} -> ${found.ip}`);
           }
           if (found.hostname && record.hostname !== found.hostname) {
             addHistory(
@@ -451,15 +523,20 @@ function createDatabase(options = {}) {
             );
           }
 
+          const vendor = found.vendor || record.vendor;
+          const hostname = found.hostname || record.hostname;
           backend.update("devices", record.id, {
             ip: found.ip,
-            hostname: found.hostname || record.hostname,
+            hostname,
             mac: found.mac || record.mac,
-            vendor: found.vendor || record.vendor,
+            vendor,
             online: true,
             response_time: found.responseTime ?? null,
             open_ports: ports,
             last_seen: timestamp,
+            // Only fill in a still-empty category - never overwrite one the
+            // user has set (or already guessed) on a previous scan.
+            category: record.category || guessCategory({ vendor, hostname, openPorts: ports }),
           });
         }
 
@@ -504,6 +581,46 @@ function createDatabase(options = {}) {
       };
       api.finishScan(scanId, summary);
       return summary;
+    },
+
+    /* --------------------------- vault ------------------------------ */
+    getVaultMeta() {
+      return backend.all("vault_meta")[0] || null;
+    },
+    setVaultMeta(meta) {
+      backend.remove("vault_meta", () => true);
+      return backend.insert("vault_meta", { id: "singleton", ...meta });
+    },
+    wipeVault() {
+      backend.remove("credentials", () => true);
+      backend.remove("vault_meta", () => true);
+      return { ok: true };
+    },
+
+    /* ------------------------ credentials ---------------------------- */
+    listCredentials(deviceId) {
+      return backend
+        .all("credentials")
+        .filter((c) => !deviceId || c.device_id === deviceId)
+        .map(stripSecret);
+    },
+    getCredentialRaw(id) {
+      return backend.all("credentials").find((c) => c.id === id) || null;
+    },
+    listCredentialsRaw() {
+      return backend.all("credentials");
+    },
+    createCredential(row) {
+      const record = { id: newId(), created_at: nowIso(), updated_at: nowIso(), ...row };
+      backend.insert("credentials", record);
+      return stripSecret(record);
+    },
+    updateCredential(id, patch) {
+      return stripSecret(backend.update("credentials", id, { ...patch, updated_at: nowIso() }));
+    },
+    deleteCredential(id) {
+      backend.remove("credentials", (r) => r.id === id);
+      return { ok: true };
     },
 
     /* --------------------------- export --------------------------- */

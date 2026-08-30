@@ -33,7 +33,6 @@ One shared scanner + database core, two shells around it.
                 └────────────────┘
 ```
 
-
 ## Database schema
 
 - `networks` — name, CIDR, created/updated at
@@ -94,7 +93,6 @@ One shared scanner + database core, two shells around it.
    - Persist the SQLite database through a named volume mounted at `/data`.
    - Provide a `docker-compose.yml` with host networking, the volume, a port mapping, and env vars for scan interval and default subnet.
    - Shared code layout so the scanner and database modules are used by both the Electron main process and the Docker server — one engine, two shells.
-
 
 ## First milestone
 

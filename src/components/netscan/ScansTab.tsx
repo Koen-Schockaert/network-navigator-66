@@ -107,10 +107,7 @@ export function ScansTab({ scans, networks, history }: Props) {
           <Typography variant="caption" color="text.secondary">
             Full audit trail across all devices
           </Typography>
-          <Stack
-            divider={<Divider flexItem />}
-            sx={{ mt: 1.5, maxHeight: 520, overflowY: "auto" }}
-          >
+          <Stack divider={<Divider flexItem />} sx={{ mt: 1.5, maxHeight: 520, overflowY: "auto" }}>
             {history.length === 0 ? (
               <Typography variant="body2" color="text.secondary">
                 Nothing recorded yet.
@@ -136,7 +133,12 @@ export function ScansTab({ scans, networks, history }: Props) {
                     <Typography variant="body2" noWrap>
                       {HISTORY_LABELS[entry.event] || entry.event}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      noWrap
+                      sx={{ display: "block" }}
+                    >
                       {entry.detail} · {relativeTime(entry.created_at)}
                     </Typography>
                   </Box>

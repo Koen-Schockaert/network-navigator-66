@@ -6,6 +6,9 @@ import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import type { ReactNode } from "react";
+import { useState } from "react";
+import { netscan } from "@/lib/netscan-api";
+import type { CredentialSecret } from "@/lib/netscan-types";
 import { mono, statusColors } from "@/theme";
 
 export function Mono({ children }: { children: ReactNode }) {
@@ -148,4 +151,30 @@ export function historyColor(event: string) {
   if (event === "status_change") return statusColors.alert;
   if (event === "ports_changed") return statusColors.danger;
   return statusColors.offline;
+}
+
+/**
+ * Tracks which credentials' secrets have been decrypted and revealed in the
+ * current view. Callers must clear() when the vault locks so revealed
+ * plaintext never survives a lock.
+ */
+export function useRevealedSecrets() {
+  const [revealed, setRevealed] = useState<Record<string, CredentialSecret>>({});
+
+  const reveal = async (id: string) => {
+    const secret = await netscan.getCredentialSecret(id);
+    setRevealed((prev) => ({ ...prev, [id]: secret }));
+  };
+
+  const hide = (id: string) => {
+    setRevealed((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const clear = () => setRevealed({});
+
+  return { revealed, reveal, hide, clear };
 }

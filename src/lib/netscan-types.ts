@@ -23,6 +23,8 @@ export type DeviceRow = {
   first_seen: string;
   last_seen: string;
   notes: string | null;
+  label: string | null;
+  category: string | null;
 };
 
 export type HistoryRow = {
@@ -66,6 +68,7 @@ export type Dashboard = {
   networks: number;
   lastScanAt: string | null;
   vendors: { vendor: string; count: number }[];
+  categories: { category: string; count: number }[];
   recentScans: ScanRow[];
   recentHistory: HistoryRow[];
 };
@@ -93,7 +96,64 @@ export type NetscanEvent = {
   scanId?: string;
   networkId?: string;
   message?: string;
+  device?: DeviceRow;
+  credential?: CredentialRow;
+  id?: string;
   [key: string]: unknown;
 };
 
 export type TransportMode = "desktop" | "server" | "demo";
+
+export type CredentialProtocol =
+  "http" | "https" | "ssh" | "telnet" | "rdp" | "vnc" | "ftp" | "other";
+
+export type CredentialSecretKind = "password" | "ssh_key";
+
+export type CredentialRow = {
+  id: string;
+  device_id: string;
+  label: string;
+  protocol: CredentialProtocol;
+  host_override: string | null;
+  port: number | null;
+  username: string | null;
+  secret_type: CredentialSecretKind;
+  created_at: string;
+  updated_at: string;
+};
+
+// Discriminated union, not a fixed {password,notes} shape - this is what lets
+// a future secret kind (e.g. an API token for some other addon) be added
+// later without a DB migration: core/vault.cjs encrypts whatever JSON object
+// is handed to it, so a new union member is the only change needed.
+export type CredentialSecret =
+  | { kind: "password"; password: string }
+  | { kind: "ssh_key"; privateKey: string; passphrase: string; publicKey: string | null };
+
+export type CredentialInput = {
+  device_id: string;
+  label: string;
+  protocol: CredentialProtocol;
+  host_override?: string | null;
+  port?: number | null;
+  username?: string | null;
+} & (
+  | { secret_type: "password"; password: string }
+  | { secret_type: "ssh_key"; privateKey: string; passphrase?: string; publicKey?: string | null }
+);
+
+// Not a strict discriminated union: the caller includes only the fields it's
+// actually changing (mirrors how core/service.cjs's updateCredential checks
+// "key" in patch per field), so metadata-only edits and secret replacements
+// share one loose shape instead of forcing every field on every call.
+export type CredentialPatch = Partial<
+  Pick<CredentialRow, "label" | "protocol" | "host_override" | "port" | "username">
+> & {
+  secret_type?: CredentialSecretKind;
+  password?: string;
+  privateKey?: string;
+  passphrase?: string;
+  publicKey?: string | null;
+};
+
+export type VaultStatus = { configured: boolean; unlocked: boolean };

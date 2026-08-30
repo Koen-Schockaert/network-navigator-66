@@ -90,6 +90,20 @@ app.whenReady().then(() => {
   handle("getDashboard", () => service.getDashboard());
   handle("listHistory", (deviceId) => service.listHistory(deviceId));
 
+  handle("getVaultStatus", () => service.getVaultStatus());
+  handle("setupVault", (password) => service.setupVault(password));
+  handle("unlockVault", (password) => service.unlockVault(password));
+  handle("lockVault", () => service.lockVault());
+  handle("changeMasterPassword", (oldPassword, newPassword) =>
+    service.changeMasterPassword(oldPassword, newPassword),
+  );
+  handle("resetVault", () => service.resetVault());
+  handle("listCredentials", (deviceId) => service.listCredentials(deviceId));
+  handle("getCredentialSecret", (id) => service.getCredentialSecret(id));
+  handle("createCredential", (input) => service.createCredential(input));
+  handle("updateCredential", (id, patch) => service.updateCredential(id, patch));
+  handle("deleteCredential", (id) => service.deleteCredential(id));
+
   handle("exportData", async () => {
     const payload = service.exportAll();
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {

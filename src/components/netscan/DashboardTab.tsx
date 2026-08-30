@@ -10,6 +10,7 @@ import Divider from "@mui/material/Divider";
 import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import { categoryMeta } from "@/lib/device-categories";
 import type { Dashboard } from "@/lib/netscan-types";
 import { statusColors } from "@/theme";
 import { HISTORY_LABELS, Mono, StatCard, historyColor, relativeTime } from "./shared";
@@ -18,6 +19,7 @@ export function DashboardTab({ data }: { data: Dashboard | null }) {
   if (!data) return <LinearProgress />;
 
   const maxVendor = Math.max(1, ...data.vendors.map((v) => v.count));
+  const maxCategory = Math.max(1, ...data.categories.map((c) => c.count));
 
   return (
     <Stack spacing={2.5}>
@@ -58,6 +60,44 @@ export function DashboardTab({ data }: { data: Dashboard | null }) {
         />
       </Stack>
 
+      <Card>
+        <CardContent>
+          <Typography variant="h6">Devices by category</Typography>
+          <Typography variant="caption" color="text.secondary">
+            Auto-guessed from vendor and hostname on first scan; edit any device to correct it
+          </Typography>
+          <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: "wrap", mt: 2 }}>
+            {data.categories.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No devices yet — run a scan to populate this view.
+              </Typography>
+            ) : (
+              data.categories.map((entry) => {
+                const meta = categoryMeta(entry.category);
+                const Icon = meta.icon;
+                return (
+                  <Box key={entry.category} sx={{ minWidth: 170, flex: "1 1 170px" }}>
+                    <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 0.5 }}>
+                      <Icon fontSize="small" color="action" />
+                      <Typography variant="body2" sx={{ flex: 1 }}>
+                        {meta.label}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {entry.count}
+                      </Typography>
+                    </Stack>
+                    <LinearProgress
+                      variant="determinate"
+                      value={(entry.count / maxCategory) * 100}
+                    />
+                  </Box>
+                );
+              })
+            )}
+          </Stack>
+        </CardContent>
+      </Card>
+
       <Stack direction={{ xs: "column", lg: "row" }} spacing={2.5} sx={{ alignItems: "stretch" }}>
         <Card sx={{ flex: 1 }}>
           <CardContent>
@@ -73,10 +113,7 @@ export function DashboardTab({ data }: { data: Dashboard | null }) {
               ) : (
                 data.vendors.map((vendor) => (
                   <Box key={vendor.vendor}>
-                    <Stack
-                      direction="row"
-                      sx={{ justifyContent: "space-between", mb: 0.5 }}
-                    >
+                    <Stack direction="row" sx={{ justifyContent: "space-between", mb: 0.5 }}>
                       <Typography variant="body2">{vendor.vendor}</Typography>
                       <Typography variant="body2" color="text.secondary">
                         {vendor.count}

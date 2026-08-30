@@ -5,11 +5,11 @@ MAC + vendor, online status and open ports, and keeps a history so you can compa
 
 The same React/Material UI frontend runs in three modes:
 
-| Mode | Scanning | How to run |
-| --- | --- | --- |
-| Web preview | demo data only (browsers cannot open raw sockets) | the Lovable preview |
-| Desktop (Electron) | real ICMP / ARP / TCP | `npm run electron` |
-| Container (Docker) | real, on the host network | `npm run docker:up` |
+| Mode               | Scanning                                          | How to run          |
+| ------------------ | ------------------------------------------------- | ------------------- |
+| Web preview        | demo data only (browsers cannot open raw sockets) | the Lovable preview |
+| Desktop (Electron) | real ICMP / ARP / TCP                             | `npm run electron`  |
+| Container (Docker) | real, on the host network                         | `npm run docker:up` |
 
 ## Desktop app
 

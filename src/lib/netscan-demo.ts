@@ -1,10 +1,15 @@
 import type {
+  CredentialInput,
+  CredentialPatch,
+  CredentialRow,
+  CredentialSecret,
   Dashboard,
   DeviceRow,
   HistoryRow,
   Info,
   NetworkRow,
   ScanRow,
+  VaultStatus,
 } from "./netscan-types";
 
 /**
@@ -42,6 +47,21 @@ const HOSTNAMES = [
   "pi-hole.lan",
   "camera-frontdoor.lan",
   "workstation.lan",
+];
+
+// Parallel to VENDORS/HOSTNAMES by index - keeps demo data self-consistent
+// (e.g. the Synology entry shows up as a "server", not "Unknown").
+const CATEGORIES = [
+  "router",
+  "laptop",
+  "server",
+  "server",
+  "iot",
+  "iot",
+  "tv",
+  "speaker",
+  "printer",
+  "desktop",
 ];
 
 const PORT_SETS = [
@@ -86,6 +106,7 @@ type DemoState = {
   devices: DeviceRow[];
   scans: ScanRow[];
   history: HistoryRow[];
+  credentials: CredentialRow[];
 };
 
 function buildState(): DemoState {
@@ -125,6 +146,10 @@ function buildState(): DemoState {
       first_seen: iso(60 * 24 * (14 - (index % 10))),
       last_seen: online ? iso(11) : iso(60 * 24 * 2),
       notes: null,
+      label: null,
+      // Leave every third device uncategorized so the demo shows what an
+      // unclassified device looks like too, not just a fully-tagged fleet.
+      category: index % 3 === 2 ? null : (CATEGORIES[index % CATEGORIES.length] ?? null),
     };
   });
 
@@ -175,10 +200,63 @@ function buildState(): DemoState {
     },
   ];
 
-  return { networks, devices, scans, history };
+  const credentials: CredentialRow[] = [
+    {
+      id: "demo-credential-1",
+      device_id: "demo-device-1",
+      label: "Router admin",
+      protocol: "http",
+      host_override: null,
+      port: null,
+      username: "admin",
+      secret_type: "password",
+      created_at: iso(60 * 24 * 10),
+      updated_at: iso(60 * 24 * 10),
+    },
+    {
+      id: "demo-credential-2",
+      device_id: "demo-device-3",
+      label: "NAS web UI",
+      protocol: "https",
+      host_override: null,
+      port: 5001,
+      username: "koen",
+      secret_type: "password",
+      created_at: iso(60 * 24 * 8),
+      updated_at: iso(60 * 24 * 8),
+    },
+    {
+      id: "demo-credential-3",
+      device_id: "demo-device-3",
+      label: "NAS SSH",
+      protocol: "ssh",
+      host_override: null,
+      port: null,
+      username: "koen",
+      secret_type: "ssh_key",
+      created_at: iso(60 * 24 * 8),
+      updated_at: iso(60 * 24 * 8),
+    },
+  ];
+
+  demoSecrets.set("demo-credential-1", { kind: "password", password: "letmein123" });
+  demoSecrets.set("demo-credential-2", { kind: "password", password: "hunter2!" });
+  demoSecrets.set("demo-credential-3", {
+    kind: "ssh_key",
+    privateKey:
+      "-----BEGIN OPENSSH PRIVATE KEY-----\n(demo key - not a real credential)\n-----END OPENSSH PRIVATE KEY-----",
+    passphrase: "",
+    publicKey: "ssh-ed25519 AAAA...demo koen@nas",
+  });
+
+  return { networks, devices, scans, history, credentials };
 }
 
 let state: DemoState | null = null;
+const demoSecrets = new Map<string, CredentialSecret>();
+let demoVaultPassword: string | null = null;
+let demoVaultUnlocked = false;
+
 function getState(): DemoState {
   if (!state) state = buildState();
   return state;
@@ -251,9 +329,13 @@ export const demoBackend = {
 
   deleteNetwork(id: string) {
     const current = getState();
+    const removedDeviceIds = new Set(
+      current.devices.filter((d) => d.network_id === id).map((d) => d.id),
+    );
     current.networks = current.networks.filter((n) => n.id !== id);
     current.devices = current.devices.filter((d) => d.network_id !== id);
     current.scans = current.scans.filter((s) => s.network_id !== id);
+    current.credentials = current.credentials.filter((c) => !removedDeviceIds.has(c.device_id));
     return { ok: true };
   },
 
@@ -284,9 +366,12 @@ export const demoBackend = {
   getDashboard(): Dashboard {
     const { devices, scans, history } = getState();
     const vendorCounts = new Map<string, number>();
+    const categoryCounts = new Map<string, number>();
     for (const device of devices) {
       const key = device.vendor || "Unknown";
       vendorCounts.set(key, (vendorCounts.get(key) || 0) + 1);
+      const category = device.category || "uncategorized";
+      categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
     }
     return {
       totalDevices: devices.length,
@@ -300,9 +385,147 @@ export const demoBackend = {
         .map(([vendor, count]) => ({ vendor, count }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 8),
+      categories: [...categoryCounts.entries()]
+        .map(([category, count]) => ({ category, count }))
+        .sort((a, b) => b.count - a.count),
       recentScans: scans.slice(0, 10),
       recentHistory: history.slice(0, 25),
     };
+  },
+
+  /* -------------------------- vault (simulated) -------------------------- */
+  // The demo shell has no real crypto - it's already an explicitly
+  // non-real-scanning preview, so the "vault" is just a password check kept
+  // in memory for the length of the page session.
+
+  getVaultStatus(): VaultStatus {
+    return { configured: demoVaultPassword !== null, unlocked: demoVaultUnlocked };
+  },
+
+  setupVault(password: string): VaultStatus {
+    if (password.length < 8) throw new Error("Master password must be at least 8 characters");
+    if (demoVaultPassword !== null) {
+      throw new Error("Vault already configured - use changeMasterPassword instead");
+    }
+    demoVaultPassword = password;
+    demoVaultUnlocked = true;
+    return demoBackend.getVaultStatus();
+  },
+
+  unlockVault(password: string): VaultStatus {
+    if (demoVaultPassword === null) throw new Error("Vault has not been set up yet");
+    if (password !== demoVaultPassword) throw new Error("Incorrect master password");
+    demoVaultUnlocked = true;
+    return demoBackend.getVaultStatus();
+  },
+
+  lockVault(): VaultStatus {
+    demoVaultUnlocked = false;
+    return demoBackend.getVaultStatus();
+  },
+
+  changeMasterPassword(oldPassword: string, newPassword: string): VaultStatus {
+    if (demoVaultPassword === null) throw new Error("Vault has not been set up yet");
+    if (oldPassword !== demoVaultPassword) throw new Error("Incorrect current master password");
+    if (newPassword.length < 8) throw new Error("Master password must be at least 8 characters");
+    demoVaultPassword = newPassword;
+    demoVaultUnlocked = true;
+    return demoBackend.getVaultStatus();
+  },
+
+  resetVault(): VaultStatus {
+    demoVaultPassword = null;
+    demoVaultUnlocked = false;
+    getState().credentials = [];
+    demoSecrets.clear();
+    return demoBackend.getVaultStatus();
+  },
+
+  /* ------------------------- credentials (simulated) ---------------------- */
+
+  listCredentials(deviceId?: string): CredentialRow[] {
+    return getState().credentials.filter((c) => !deviceId || c.device_id === deviceId);
+  },
+
+  getCredentialSecret(id: string): CredentialSecret {
+    if (!demoVaultUnlocked) throw new Error("Vault is locked");
+    const secret = demoSecrets.get(id);
+    if (!secret) throw new Error("Credential not found");
+    return secret;
+  },
+
+  createCredential(input: CredentialInput): CredentialRow {
+    if (!demoVaultUnlocked) throw new Error("Vault is locked");
+    if (!getState().devices.some((d) => d.id === input.device_id)) {
+      throw new Error("Device not found");
+    }
+    if (!input.label.trim()) throw new Error("Label is required");
+    const timestamp = new Date().toISOString();
+    const row: CredentialRow = {
+      id: `demo-credential-${Date.now()}`,
+      device_id: input.device_id,
+      label: input.label.trim(),
+      protocol: input.protocol,
+      host_override: input.host_override ?? null,
+      port: input.port ?? null,
+      username: input.username ?? null,
+      secret_type: input.secret_type,
+      created_at: timestamp,
+      updated_at: timestamp,
+    };
+    getState().credentials.push(row);
+    demoSecrets.set(
+      row.id,
+      input.secret_type === "ssh_key"
+        ? {
+            kind: "ssh_key",
+            privateKey: input.privateKey,
+            passphrase: input.passphrase ?? "",
+            publicKey: input.publicKey ?? null,
+          }
+        : { kind: "password", password: input.password },
+    );
+    return row;
+  },
+
+  updateCredential(id: string, patch: CredentialPatch): CredentialRow {
+    if (!demoVaultUnlocked) throw new Error("Vault is locked");
+    const row = getState().credentials.find((c) => c.id === id);
+    if (!row) throw new Error("Credential not found");
+    for (const key of ["label", "protocol", "host_override", "port", "username"] as const) {
+      if (key in patch && patch[key] !== undefined) {
+        (row as Record<string, unknown>)[key] = patch[key];
+      }
+    }
+    if ("secret_type" in patch && patch.secret_type) {
+      const current = demoSecrets.get(id);
+      if (patch.secret_type === "ssh_key") {
+        const base =
+          current?.kind === "ssh_key" ? current : { privateKey: "", passphrase: "", publicKey: null };
+        demoSecrets.set(id, {
+          kind: "ssh_key",
+          privateKey: patch.privateKey ?? base.privateKey,
+          passphrase: patch.passphrase ?? base.passphrase,
+          publicKey: patch.publicKey ?? base.publicKey,
+        });
+      } else {
+        const base = current?.kind === "password" ? current : { password: "" };
+        demoSecrets.set(id, {
+          kind: "password",
+          password: patch.password ?? base.password,
+        });
+      }
+      row.secret_type = patch.secret_type;
+    }
+    row.updated_at = new Date().toISOString();
+    return row;
+  },
+
+  deleteCredential(id: string): { ok: boolean } {
+    const current = getState();
+    current.credentials = current.credentials.filter((c) => c.id !== id);
+    demoSecrets.delete(id);
+    return { ok: true };
   },
 
   /** Simulate a sweep so the scan screen is fully explorable in the browser. */

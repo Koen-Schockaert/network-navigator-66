@@ -1,9 +1,19 @@
+import AddIcon from "@mui/icons-material/Add";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
+import EditIcon from "@mui/icons-material/Edit";
+import KeyIcon from "@mui/icons-material/Key";
+import LockIcon from "@mui/icons-material/Lock";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import SearchIcon from "@mui/icons-material/Search";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
+import Chip from "@mui/material/Chip";
 import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
@@ -14,11 +24,23 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
-import { useMemo, useState } from "react";
-import type { DeviceRow, HistoryRow, Info, NetworkRow } from "@/lib/netscan-types";
+import { useEffect, useMemo, useState } from "react";
+import { buildCredentialUrl, protocolMeta } from "@/lib/credential-protocols";
+import { DEVICE_CATEGORIES, categoryMeta } from "@/lib/device-categories";
+import { netscan } from "@/lib/netscan-api";
+import type {
+  CredentialRow,
+  DeviceRow,
+  HistoryRow,
+  Info,
+  NetworkRow,
+  VaultStatus,
+} from "@/lib/netscan-types";
 import { mono } from "@/theme";
+import { CredentialFormDialog } from "./CredentialFormDialog";
 import {
   HISTORY_LABELS,
   Mono,
@@ -26,28 +48,40 @@ import {
   StatusChip,
   historyColor,
   relativeTime,
+  useRevealedSecrets,
 } from "./shared";
 
 type Props = {
   devices: DeviceRow[];
   networks: NetworkRow[];
   history: HistoryRow[];
+  credentials: CredentialRow[];
+  vaultStatus: VaultStatus;
   info: Info | null;
   networkFilter: string;
   onNetworkFilter: (value: string) => void;
+  onRefresh: () => void;
 };
 
 export function DevicesTab({
   devices,
   networks,
   history,
+  credentials,
+  vaultStatus,
   info,
   networkFilter,
   onNetworkFilter,
+  onRefresh,
 }: Props) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | "online" | "offline">("all");
-  const [selected, setSelected] = useState<DeviceRow | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = useMemo(
+    () => devices.find((device) => device.id === selectedId) ?? null,
+    [devices, selectedId],
+  );
   const labels = info?.portLabels ?? {};
 
   const rows = useMemo(() => {
@@ -55,12 +89,13 @@ export function DevicesTab({
     return devices.filter((device) => {
       if (status === "online" && !device.online) return false;
       if (status === "offline" && device.online) return false;
+      if (categoryFilter && (device.category || "uncategorized") !== categoryFilter) return false;
       if (!needle) return true;
-      return [device.ip, device.hostname, device.mac, device.vendor, device.notes]
+      return [device.ip, device.hostname, device.mac, device.vendor, device.notes, device.label]
         .filter(Boolean)
         .some((field) => String(field).toLowerCase().includes(needle));
     });
-  }, [devices, search, status]);
+  }, [devices, search, status, categoryFilter]);
 
   const columns: GridColDef<DeviceRow>[] = [
     {
@@ -69,6 +104,30 @@ export function DevicesTab({
       width: 120,
       renderCell: (params) => <StatusChip online={Boolean(params.value)} />,
       sortable: true,
+    },
+    {
+      field: "label",
+      headerName: "Label",
+      width: 150,
+      valueGetter: (_value, row) => row.label ?? "—",
+    },
+    {
+      field: "category",
+      headerName: "Category",
+      width: 170,
+      valueGetter: (_value, row) => categoryMeta(row.category).label,
+      renderCell: (params) => {
+        const meta = categoryMeta((params.row as DeviceRow).category);
+        const Icon = meta.icon;
+        return (
+          <Chip
+            size="small"
+            variant="outlined"
+            icon={<Icon fontSize="small" />}
+            label={meta.label}
+          />
+        );
+      },
     },
     {
       field: "ip",
@@ -109,8 +168,7 @@ export function DevicesTab({
       field: "response_time",
       headerName: "Latency",
       width: 110,
-      valueGetter: (_value, row) =>
-        row.response_time === null ? "—" : `${row.response_time} ms`,
+      valueGetter: (_value, row) => (row.response_time === null ? "—" : `${row.response_time} ms`),
     },
     {
       field: "last_seen",
@@ -120,9 +178,84 @@ export function DevicesTab({
     },
   ];
 
-  const deviceHistory = selected
-    ? history.filter((entry) => entry.device_id === selected.id)
+  const deviceHistory = selected ? history.filter((entry) => entry.device_id === selected.id) : [];
+  const deviceCredentials = selected
+    ? credentials.filter((credential) => credential.device_id === selected.id)
     : [];
+
+  const { revealed, reveal, hide, clear } = useRevealedSecrets();
+  const [credentialFormOpen, setCredentialFormOpen] = useState(false);
+  const [editingCredential, setEditingCredential] = useState<CredentialRow | null>(null);
+  const [deleteCredentialTarget, setDeleteCredentialTarget] = useState<CredentialRow | null>(null);
+
+  useEffect(() => {
+    if (!vaultStatus.unlocked) clear();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vaultStatus.unlocked]);
+
+  useEffect(() => {
+    clear();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
+
+  async function deleteCredential() {
+    if (!deleteCredentialTarget) return;
+    await netscan.deleteCredential(deleteCredentialTarget.id);
+    setDeleteCredentialTarget(null);
+    onRefresh();
+  }
+
+  const [labelDraft, setLabelDraft] = useState("");
+  const [savingLabel, setSavingLabel] = useState(false);
+  useEffect(() => {
+    setLabelDraft(selected?.label ?? "");
+  }, [selected]);
+
+  const saveLabel = async () => {
+    if (!selected) return;
+    const value = labelDraft.trim() || null;
+    if (value === selected.label) return;
+    setSavingLabel(true);
+    try {
+      await netscan.updateDevice(selected.id, { label: value });
+      onRefresh();
+    } finally {
+      setSavingLabel(false);
+    }
+  };
+
+  const [savingCategory, setSavingCategory] = useState(false);
+  const saveCategory = async (value: string) => {
+    if (!selected) return;
+    const category = value || null;
+    if (category === selected.category) return;
+    setSavingCategory(true);
+    try {
+      await netscan.updateDevice(selected.id, { category });
+      onRefresh();
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
+  const [notesDraft, setNotesDraft] = useState("");
+  const [savingNotes, setSavingNotes] = useState(false);
+  useEffect(() => {
+    setNotesDraft(selected?.notes ?? "");
+  }, [selected]);
+
+  const saveNotes = async () => {
+    if (!selected) return;
+    const value = notesDraft.trim() || null;
+    if (value === selected.notes) return;
+    setSavingNotes(true);
+    try {
+      await netscan.updateDevice(selected.id, { notes: value });
+      onRefresh();
+    } finally {
+      setSavingNotes(false);
+    }
+  };
 
   return (
     <Stack spacing={2}>
@@ -160,6 +293,21 @@ export function DevicesTab({
             </MenuItem>
           ))}
         </TextField>
+        <TextField
+          select
+          label="Category"
+          value={categoryFilter}
+          onChange={(event) => setCategoryFilter(event.target.value)}
+          sx={{ minWidth: 190 }}
+        >
+          <MenuItem value="">All categories</MenuItem>
+          {DEVICE_CATEGORIES.map((category) => (
+            <MenuItem key={category.value} value={category.value}>
+              {category.label}
+            </MenuItem>
+          ))}
+          <MenuItem value="uncategorized">Uncategorized</MenuItem>
+        </TextField>
         <ToggleButtonGroup
           exclusive
           size="small"
@@ -178,7 +326,7 @@ export function DevicesTab({
           columns={columns}
           density="comfortable"
           disableRowSelectionOnClick
-          onRowClick={(params) => setSelected(params.row as DeviceRow)}
+          onRowClick={(params) => setSelectedId((params.row as DeviceRow).id)}
           initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
           pageSizeOptions={[25, 50, 100]}
           sx={{
@@ -192,12 +340,7 @@ export function DevicesTab({
         />
       </Card>
 
-      <Dialog
-        open={Boolean(selected)}
-        onClose={() => setSelected(null)}
-        maxWidth="sm"
-        fullWidth
-      >
+      <Dialog open={Boolean(selected)} onClose={() => setSelectedId(null)} maxWidth="sm" fullWidth>
         {selected ? (
           <>
             <DialogTitle sx={{ pb: 1 }}>
@@ -218,6 +361,50 @@ export function DevicesTab({
             </DialogTitle>
             <DialogContent dividers>
               <Stack spacing={1.25}>
+                <TextField
+                  label="Label"
+                  placeholder="e.g. Living room TV"
+                  size="small"
+                  fullWidth
+                  value={labelDraft}
+                  onChange={(event) => setLabelDraft(event.target.value)}
+                  onBlur={saveLabel}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      (event.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  disabled={savingLabel}
+                />
+                <TextField
+                  select
+                  label="Category"
+                  size="small"
+                  fullWidth
+                  value={selected.category ?? ""}
+                  onChange={(event) => saveCategory(event.target.value)}
+                  disabled={savingCategory}
+                >
+                  <MenuItem value="">Uncategorized</MenuItem>
+                  {DEVICE_CATEGORIES.map((category) => (
+                    <MenuItem key={category.value} value={category.value}>
+                      {category.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  label="Notes"
+                  placeholder="Anything worth remembering about this device"
+                  size="small"
+                  fullWidth
+                  multiline
+                  minRows={2}
+                  value={notesDraft}
+                  onChange={(event) => setNotesDraft(event.target.value)}
+                  onBlur={saveNotes}
+                  disabled={savingNotes}
+                />
                 <Row label="Vendor" value={selected.vendor || "Unknown"} />
                 <Row label="MAC address" value={selected.mac || "not available"} mono />
                 <Row
@@ -271,36 +458,165 @@ export function DevicesTab({
                   ))
                 )}
               </Stack>
+
+              <Divider sx={{ my: 2 }} />
+              <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
+                <Typography variant="overline" color="text.secondary">
+                  Logins
+                </Typography>
+                <Button
+                  size="small"
+                  startIcon={<AddIcon />}
+                  disabled={!vaultStatus.unlocked}
+                  onClick={() => setCredentialFormOpen(true)}
+                >
+                  Add credential
+                </Button>
+              </Stack>
+              <Stack spacing={1} sx={{ mt: 1 }}>
+                {deviceCredentials.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    {vaultStatus.unlocked
+                      ? "No logins saved for this device yet."
+                      : "No logins saved for this device yet. Unlock the vault on the Credentials tab to add one."}
+                  </Typography>
+                ) : (
+                  deviceCredentials.map((credential) => {
+                    const meta = protocolMeta(credential.protocol);
+                    const Icon = meta.icon;
+                    const host = credential.host_override || selected.ip;
+                    const url = buildCredentialUrl(credential.protocol, host, credential.port);
+                    const secret = revealed[credential.id];
+                    return (
+                      <Stack
+                        key={credential.id}
+                        direction="row"
+                        spacing={1}
+                        sx={{ alignItems: "center" }}
+                      >
+                        <Icon fontSize="small" color="action" />
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" noWrap>
+                            {credential.label}
+                            {credential.username ? ` · ${credential.username}` : ""}
+                          </Typography>
+                          {secret ? (
+                            <Typography variant="caption" color="text.secondary">
+                              {secret.kind === "password" ? (
+                                <Mono>{secret.password}</Mono>
+                              ) : (
+                                <Mono>{secret.privateKey.slice(0, 40)}…</Mono>
+                              )}
+                            </Typography>
+                          ) : null}
+                        </Box>
+                        {credential.secret_type === "ssh_key" ? (
+                          <KeyIcon fontSize="inherit" color="disabled" />
+                        ) : (
+                          <LockIcon fontSize="inherit" color="disabled" />
+                        )}
+                        <Tooltip
+                          title={
+                            vaultStatus.unlocked ? "Reveal secret" : "Unlock the vault to reveal"
+                          }
+                        >
+                          <span>
+                            <IconButton
+                              size="small"
+                              disabled={!vaultStatus.unlocked}
+                              onClick={() => (secret ? hide(credential.id) : reveal(credential.id))}
+                            >
+                              {secret ? (
+                                <VisibilityOffIcon fontSize="small" />
+                              ) : (
+                                <VisibilityIcon fontSize="small" />
+                              )}
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip
+                          title={url ? "Open in browser" : "Not available for this protocol"}
+                        >
+                          <span>
+                            <IconButton
+                              size="small"
+                              disabled={!url}
+                              onClick={() => url && window.open(url, "_blank", "noopener")}
+                            >
+                              <OpenInNewIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="Edit">
+                          <IconButton size="small" onClick={() => setEditingCredential(credential)}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete">
+                          <IconButton
+                            size="small"
+                            onClick={() => setDeleteCredentialTarget(credential)}
+                          >
+                            <DeleteOutlineIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
+                    );
+                  })
+                )}
+              </Stack>
+
               <Stack direction="row" sx={{ justifyContent: "flex-end", mt: 2 }}>
-                <Button onClick={() => setSelected(null)}>Close</Button>
+                <Button onClick={() => setSelectedId(null)}>Close</Button>
               </Stack>
             </DialogContent>
           </>
         ) : null}
       </Dialog>
+
+      {selected ? (
+        <CredentialFormDialog
+          open={credentialFormOpen || Boolean(editingCredential)}
+          onClose={() => {
+            setCredentialFormOpen(false);
+            setEditingCredential(null);
+          }}
+          devices={devices}
+          deviceId={selected.id}
+          credential={editingCredential}
+          vaultUnlocked={vaultStatus.unlocked}
+          onSaved={onRefresh}
+        />
+      ) : null}
+
+      <Dialog
+        open={Boolean(deleteCredentialTarget)}
+        onClose={() => setDeleteCredentialTarget(null)}
+      >
+        <DialogTitle>Delete credential</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            Delete the login "{deleteCredentialTarget?.label}"? This cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteCredentialTarget(null)}>Cancel</Button>
+          <Button color="error" variant="contained" onClick={deleteCredential}>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }
 
-function Row({
-  label,
-  value,
-  mono: isMono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
+function Row({ label, value, mono: isMono }: { label: string; value: string; mono?: boolean }) {
   return (
     <Stack direction="row" sx={{ justifyContent: "space-between", gap: 2 }}>
       <Typography variant="body2" color="text.secondary">
         {label}
       </Typography>
-      {isMono ? (
-        <Mono>{value}</Mono>
-      ) : (
-        <Typography variant="body2">{value}</Typography>
-      )}
+      {isMono ? <Mono>{value}</Mono> : <Typography variant="body2">{value}</Typography>}
     </Stack>
   );
 }

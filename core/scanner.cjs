@@ -5,11 +5,18 @@ const net = require("node:net");
 const dns = require("node:dns").promises;
 const { exec } = require("node:child_process");
 const { lookupVendor, normalizeMac } = require("./oui.cjs");
+const {
+  mdnsReverse,
+  netbiosName,
+  dnsPtr,
+  localResolvers,
+  mdnsDiscover,
+} = require("./hostname.cjs");
 
 /** Common ports we probe by default. */
 const DEFAULT_PORTS = [
-  21, 22, 23, 25, 53, 80, 110, 143, 161, 443, 445, 515, 548, 631, 993, 995,
-  1883, 3000, 3306, 3389, 5000, 5060, 5432, 5900, 8006, 8080, 8443, 9100,
+  21, 22, 23, 25, 53, 80, 110, 143, 161, 443, 445, 515, 548, 631, 993, 995, 1883, 3000, 3306, 3389,
+  5000, 5060, 5432, 5900, 8006, 8080, 8443, 9100,
 ];
 
 const PORT_LABELS = {
@@ -60,12 +67,7 @@ function ipToInt(ip) {
 }
 
 function intToIp(value) {
-  return [
-    (value >>> 24) & 255,
-    (value >>> 16) & 255,
-    (value >>> 8) & 255,
-    value & 255,
-  ].join(".");
+  return [(value >>> 24) & 255, (value >>> 16) & 255, (value >>> 8) & 255, value & 255].join(".");
 }
 
 function isIpv4(value) {
@@ -114,11 +116,12 @@ function expandTargets(input) {
       const [startRaw, endRaw] = chunk.split("-");
       const start = ipToInt(startRaw);
       // Support both "10.0.0.1-10.0.0.50" and "10.0.0.1-50"
-      const end = endRaw && endRaw.includes(".")
-        ? ipToInt(endRaw)
-        : start !== null && endRaw
-          ? (start & 0xffffff00) + Number(endRaw)
-          : null;
+      const end =
+        endRaw && endRaw.includes(".")
+          ? ipToInt(endRaw)
+          : start !== null && endRaw
+            ? (start & 0xffffff00) + Number(endRaw)
+            : null;
       if (start === null || end === null || end < start) continue;
       if (end - start > 65536) continue;
       for (let i = start; i <= end; i++) push(intToIp(i >>> 0));
@@ -205,9 +208,7 @@ async function readArpTable() {
     if (!output) continue;
     for (const line of output.split("\n")) {
       const ipMatch = line.match(/(\d{1,3}(?:\.\d{1,3}){3})/);
-      const macMatch = line.match(
-        /((?:[0-9a-fA-F]{1,2}[:-]){5}[0-9a-fA-F]{1,2})/,
-      );
+      const macMatch = line.match(/((?:[0-9a-fA-F]{1,2}[:-]){5}[0-9a-fA-F]{1,2})/);
       if (!ipMatch || !macMatch) continue;
       const mac = normalizeMac(macMatch[1]);
       if (!mac || mac === "00:00:00:00:00:00") continue;
@@ -283,8 +284,7 @@ function cleanName(raw) {
 /** Check once whether a CLI helper exists on this machine. */
 async function hasTool(tool) {
   if (toolAvailability.has(tool)) return toolAvailability.get(tool);
-  const probe =
-    process.platform === "win32" ? `where ${tool}` : `command -v ${tool} 2>/dev/null`;
+  const probe = process.platform === "win32" ? `where ${tool}` : `command -v ${tool} 2>/dev/null`;
   const output = await run(probe);
   const available = Boolean(output && output.trim());
   toolAvailability.set(tool, available);
@@ -350,12 +350,34 @@ async function tryNetbios(ip) {
   return null;
 }
 
+/** Resolve with the first non-null settlement; null once every promise has settled. */
+function firstResolved(promises) {
+  return new Promise((resolve) => {
+    let remaining = promises.length;
+    if (!remaining) return resolve(null);
+    for (const promise of promises) {
+      promise.then(
+        (value) => {
+          if (value) resolve(value);
+          else if (--remaining === 0) resolve(null);
+        },
+        () => {
+          if (--remaining === 0) resolve(null);
+        },
+      );
+    }
+  });
+}
+
 /** 5. Explicit PTR query against the local resolvers / router. */
 async function tryDig(ip) {
   if (process.platform === "win32") return null;
   if (await hasTool("dig")) {
     const output = await run(`dig +short +time=1 +tries=1 -x ${ip}`);
-    const first = output.split("\n").map((l) => l.trim()).filter(Boolean)[0];
+    const first = output
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)[0];
     const name = cleanName(first);
     if (name) return name;
   }
@@ -382,52 +404,60 @@ async function tryNativeNetbios(ip) {
   return cleanName(await netbiosName(ip));
 }
 
-/** 8. Native PTR query straight at the router / local resolvers. */
+/** 8. Native PTR query straight at the router / local resolvers, raced in parallel. */
 async function tryNativeDnsPtr(ip) {
-  for (const server of localResolvers()) {
-    try {
-      const name = cleanName(await dnsPtr(ip, server));
-      if (name) return name;
-    } catch {
-      /* try the next resolver */
-    }
-  }
-  return null;
+  const servers = localResolvers();
+  if (!servers.length) return null;
+  return firstResolved(
+    servers.map((server) =>
+      dnsPtr(ip, server)
+        .then(cleanName)
+        .catch(() => null),
+    ),
+  );
 }
 
-async function resolveHostname(ip) {
-  if (hostnameCache.has(ip)) return hostnameCache.get(ip);
+/**
+ * Resolve a hostname by racing every strategy available on this machine
+ * concurrently and taking whichever answers first, bounded by `timeoutMs` so
+ * one slow/unreachable resolver can't stall the whole lookup. Only a
+ * positive result is cached: a miss isn't remembered, so the same IP gets a
+ * fresh chance on the next scan instead of being stuck blank forever.
+ */
+async function resolveHostname(ip, { timeoutMs = 1800, onLate } = {}) {
+  const cached = hostnameCache.get(ip);
+  if (cached) return cached;
 
-  let name = null;
-  const strategies = [
-    tryReverseDns,
-    tryGetent,
+  const attempts = [
     tryNativeMdns,
     tryNativeNetbios,
     tryNativeDnsPtr,
+    tryReverseDns,
+    tryGetent,
     tryMdns,
     tryNetbios,
     tryDig,
-  ];
-  for (const strategy of strategies) {
-    try {
-      name = await strategy(ip);
-    } catch {
-      name = null;
-    }
-    if (name) break;
-  }
+  ].map((strategy) => strategy(ip).catch(() => null));
 
-  hostnameCache.set(ip, name);
+  // A straggler that answers after we've already given up on this call is
+  // still worth keeping: cache it and let the caller know, so a slow-but-
+  // correct source (e.g. a loaded router) isn't wasted.
+  Promise.allSettled(attempts).then((settled) => {
+    if (hostnameCache.get(ip)) return;
+    const late = settled.find((r) => r.status === "fulfilled" && r.value);
+    if (late) {
+      hostnameCache.set(ip, late.value);
+      if (onLate) onLate(late.value);
+    }
+  });
+
+  const name = await Promise.race([
+    firstResolved(attempts),
+    new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+  ]);
+  if (name) hostnameCache.set(ip, name);
   return name;
 }
-
-
-/** Drop cached lookups so a fresh scan re-resolves names. */
-function clearHostnameCache() {
-  hostnameCache.clear();
-}
-
 
 /* ------------------------------------------------------------------ */
 /* Scan orchestration                                                  */
@@ -436,16 +466,57 @@ function clearHostnameCache() {
 async function mapWithConcurrency(items, limit, worker) {
   const results = new Array(items.length);
   let cursor = 0;
-  const runners = new Array(Math.min(limit, items.length))
-    .fill(null)
-    .map(async () => {
-      while (cursor < items.length) {
-        const index = cursor++;
-        results[index] = await worker(items[index], index);
-      }
-    });
+  const runners = new Array(Math.min(limit, items.length)).fill(null).map(async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await worker(items[index], index);
+    }
+  });
   await Promise.all(runners);
   return results;
+}
+
+/**
+ * Resolve hostnames for already-discovered devices in the background,
+ * off the critical path of the scan itself. `scanNetwork` returns as soon
+ * as the ping/port sweep is done; this keeps running afterwards and reports
+ * each name back through `onResolved` as it arrives, so a slow lookup for
+ * one device never holds up the rest of the scan.
+ */
+async function enrichHostnames(devices, { signal, onResolved } = {}) {
+  if (!devices.length) return;
+
+  // One shared mDNS listen covers many devices at once and finds names
+  // that a per-host reverse lookup usually can't (see mdnsDiscover) - run
+  // it first so the slower per-host fallback only has to chase whatever's
+  // left.
+  const discovered = await mdnsDiscover().catch(() => new Map());
+  for (const [ip, rawName] of discovered) {
+    if (signal && signal.aborted) break;
+    const device = devices.find((d) => d.ip === ip);
+    const name = cleanName(rawName);
+    if (device && name && !device.hostname) {
+      device.hostname = name;
+      if (onResolved) onResolved(ip, name);
+    }
+  }
+
+  const remaining = devices.filter((d) => !d.hostname);
+  if (!remaining.length) return;
+
+  await mapWithConcurrency(remaining, Math.min(32, remaining.length), async (device) => {
+    if (signal && signal.aborted) return;
+    const name = await resolveHostname(device.ip, {
+      onLate: (lateName) => {
+        device.hostname = device.hostname || lateName;
+        if (onResolved) onResolved(device.ip, lateName);
+      },
+    });
+    if (name) {
+      device.hostname = name;
+      if (onResolved) onResolved(device.ip, name);
+    }
+  });
 }
 
 /**
@@ -455,10 +526,11 @@ async function mapWithConcurrency(items, limit, worker) {
  *  - ports: number[]            ports to probe (default DEFAULT_PORTS)
  *  - concurrency: number        parallel hosts (default 64)
  *  - timeout: number            per-probe timeout in ms (default 1000)
- *  - resolveHostnames: boolean  reverse DNS (default true)
+ *  - resolveHostnames: boolean  resolve hostnames in the background (default true)
  *  - scanPorts: boolean         probe TCP ports (default true)
  *  - signal: { aborted: boolean }  cooperative cancellation
  *  - onProgress: (progress) => void
+ *  - onHostnameResolved: (ip, hostname) => void   fired as background lookups land
  */
 async function scanNetwork(target, options = {}) {
   const {
@@ -469,9 +541,9 @@ async function scanNetwork(target, options = {}) {
     scanPorts = true,
     signal,
     onProgress,
+    onHostnameResolved,
   } = options;
 
-  clearHostnameCache();
   const hosts = expandTargets(target);
   const startedAt = new Date().toISOString();
   const devices = [];
@@ -522,16 +594,14 @@ async function scanNetwork(target, options = {}) {
       const results = await mapWithConcurrency(ports, 24, async (port) =>
         (await checkPort(ip, port, Math.min(timeout, 800))) ? port : null,
       );
-      openPorts = Array.from(
-        new Set([...openPorts, ...results.filter((p) => p !== null)]),
-      ).sort((a, b) => a - b);
+      openPorts = Array.from(new Set([...openPorts, ...results.filter((p) => p !== null)])).sort(
+        (a, b) => a - b,
+      );
     }
-
-    const hostname = resolveHostnames ? await resolveHostname(ip) : null;
 
     const device = {
       ip,
-      hostname,
+      hostname: null,
       mac: null,
       vendor: null,
       online: true,
@@ -554,6 +624,12 @@ async function scanNetwork(target, options = {}) {
 
   devices.sort((a, b) => (ipToInt(a.ip) || 0) - (ipToInt(b.ip) || 0));
   emit(null);
+
+  if (resolveHostnames) {
+    // Fire-and-forget: don't make the scan wait on the slowest hostname
+    // lookup. Callers that care hear about each name via onHostnameResolved.
+    enrichHostnames(devices, { signal, onResolved: onHostnameResolved }).catch(() => {});
+  }
 
   return {
     target,
@@ -578,6 +654,5 @@ module.exports = {
   pingHost,
   readArpTable,
   resolveHostname,
-  clearHostnameCache,
   scanNetwork,
 };

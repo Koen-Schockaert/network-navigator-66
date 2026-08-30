@@ -36,6 +36,19 @@ contextBridge.exposeInMainWorld("netscan", {
   exportData: () => call("exportData"),
   importTargetsFile: () => call("importTargetsFile"),
 
+  getVaultStatus: () => call("getVaultStatus"),
+  setupVault: (password) => call("setupVault", password),
+  unlockVault: (password) => call("unlockVault", password),
+  lockVault: () => call("lockVault"),
+  changeMasterPassword: (oldPassword, newPassword) =>
+    call("changeMasterPassword", oldPassword, newPassword),
+  resetVault: () => call("resetVault"),
+  listCredentials: (deviceId) => call("listCredentials", deviceId),
+  getCredentialSecret: (id) => call("getCredentialSecret", id),
+  createCredential: (input) => call("createCredential", input),
+  updateCredential: (id, patch) => call("updateCredential", id, patch),
+  deleteCredential: (id) => call("deleteCredential", id),
+
   onEvent: (handler) => {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on("netscan:event", listener);

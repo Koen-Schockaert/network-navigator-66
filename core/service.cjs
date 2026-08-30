@@ -7,6 +7,7 @@
  */
 
 const { createDatabase } = require("./db.cjs");
+const vault = require("./vault.cjs");
 const {
   DEFAULT_PORTS,
   PORT_LABELS,
@@ -22,6 +23,21 @@ function createService(options = {}) {
 
   /** @type {{ scanId: string, networkId: string, signal: { aborted: boolean }, progress: object } | null} */
   let active = null;
+
+  /** Derived vault key. Buffer while unlocked, null while locked. Never persisted. */
+  let vaultKey = null;
+
+  const buildSecretFromInput = (input) => {
+    if (input.secret_type === "ssh_key") {
+      return {
+        kind: "ssh_key",
+        privateKey: input.privateKey || "",
+        passphrase: input.passphrase || "",
+        publicKey: input.publicKey || null,
+      };
+    }
+    return { kind: "password", password: input.password || "" };
+  };
 
   const broadcast = (event) => {
     for (const listener of listeners) {
@@ -131,9 +147,12 @@ function createService(options = {}) {
       const history = db.listDeviceHistory().slice(0, 25);
       const online = devices.filter((d) => d.online);
       const vendorCounts = {};
+      const categoryCounts = {};
       for (const device of devices) {
         const key = device.vendor || "Unknown";
         vendorCounts[key] = (vendorCounts[key] || 0) + 1;
+        const category = device.category || "uncategorized";
+        categoryCounts[category] = (categoryCounts[category] || 0) + 1;
       }
       return {
         totalDevices: devices.length,
@@ -147,6 +166,9 @@ function createService(options = {}) {
           .map(([vendor, count]) => ({ vendor, count }))
           .sort((a, b) => b.count - a.count)
           .slice(0, 8),
+        categories: Object.entries(categoryCounts)
+          .map(([category, count]) => ({ category, count }))
+          .sort((a, b) => b.count - a.count),
         recentScans: scans.slice(0, 10),
         recentHistory: history,
       };
@@ -183,6 +205,13 @@ function createService(options = {}) {
               if (active) active.progress = progress;
               broadcast({ type: "scan:progress", scanId: run.id, networkId, ...progress });
             },
+            onHostnameResolved: (ip, hostname) => {
+              const match = db.listDevices(networkId).find((d) => d.ip === ip);
+              if (!match) return;
+              const updated = db.resolveDeviceHostname(match.id, run.id, hostname);
+              if (updated)
+                broadcast({ type: "device:updated", scanId: run.id, networkId, device: updated });
+            },
           });
           const summary = db.recordScan({
             networkId,
@@ -212,6 +241,206 @@ function createService(options = {}) {
       active.signal.aborted = true;
       broadcast({ type: "scan:stopping", scanId: active.scanId });
       return { running: true, stopping: true, scanId: active.scanId };
+    },
+
+    /* -------------------------- vault ------------------------------ */
+    getVaultStatus() {
+      return { configured: Boolean(db.getVaultMeta()), unlocked: vaultKey !== null };
+    },
+
+    setupVault(password) {
+      if (!password || password.length < 8) {
+        throw new Error("Master password must be at least 8 characters");
+      }
+      if (db.getVaultMeta()) {
+        throw new Error("Vault already configured - use changeMasterPassword instead");
+      }
+      const salt = vault.generateSalt();
+      const key = vault.deriveKey(password, salt);
+      const verifier = vault.createVerifier(key);
+      const timestamp = new Date().toISOString();
+      db.setVaultMeta({
+        salt,
+        kdf: "scrypt",
+        kdf_n: vault.SCRYPT_PARAMS.N,
+        kdf_r: vault.SCRYPT_PARAMS.r,
+        kdf_p: vault.SCRYPT_PARAMS.p,
+        verifier: verifier.verifier,
+        verifier_iv: verifier.verifierIv,
+        verifier_tag: verifier.verifierTag,
+        created_at: timestamp,
+        updated_at: timestamp,
+      });
+      vaultKey = key;
+      broadcast({ type: "vault:unlocked" });
+      return service.getVaultStatus();
+    },
+
+    unlockVault(password) {
+      const meta = db.getVaultMeta();
+      if (!meta) throw new Error("Vault has not been set up yet");
+      const key = vault.deriveKey(password, meta.salt, {
+        N: meta.kdf_n,
+        r: meta.kdf_r,
+        p: meta.kdf_p,
+      });
+      const ok = vault.checkVerifier(key, {
+        verifier: meta.verifier,
+        verifierIv: meta.verifier_iv,
+        verifierTag: meta.verifier_tag,
+      });
+      if (!ok) throw new Error("Incorrect master password");
+      vaultKey = key;
+      broadcast({ type: "vault:unlocked" });
+      return service.getVaultStatus();
+    },
+
+    lockVault() {
+      vaultKey = null;
+      broadcast({ type: "vault:locked" });
+      return service.getVaultStatus();
+    },
+
+    changeMasterPassword(oldPassword, newPassword) {
+      const meta = db.getVaultMeta();
+      if (!meta) throw new Error("Vault has not been set up yet");
+      if (!newPassword || newPassword.length < 8) {
+        throw new Error("Master password must be at least 8 characters");
+      }
+      const oldKey = vault.deriveKey(oldPassword, meta.salt, {
+        N: meta.kdf_n,
+        r: meta.kdf_r,
+        p: meta.kdf_p,
+      });
+      const ok = vault.checkVerifier(oldKey, {
+        verifier: meta.verifier,
+        verifierIv: meta.verifier_iv,
+        verifierTag: meta.verifier_tag,
+      });
+      if (!ok) throw new Error("Incorrect current master password");
+
+      const newSalt = vault.generateSalt();
+      const newKey = vault.deriveKey(newPassword, newSalt);
+      for (const row of db.listCredentialsRaw()) {
+        const secret = vault.decryptSecret(oldKey, {
+          ciphertext: row.secret_ciphertext,
+          iv: row.secret_iv,
+          authTag: row.secret_tag,
+        });
+        const encoded = vault.encryptSecret(newKey, secret);
+        db.updateCredential(row.id, {
+          secret_ciphertext: encoded.ciphertext,
+          secret_iv: encoded.iv,
+          secret_tag: encoded.authTag,
+        });
+      }
+      const verifier = vault.createVerifier(newKey);
+      db.setVaultMeta({
+        salt: newSalt,
+        kdf: "scrypt",
+        kdf_n: vault.SCRYPT_PARAMS.N,
+        kdf_r: vault.SCRYPT_PARAMS.r,
+        kdf_p: vault.SCRYPT_PARAMS.p,
+        verifier: verifier.verifier,
+        verifier_iv: verifier.verifierIv,
+        verifier_tag: verifier.verifierTag,
+        created_at: meta.created_at,
+        updated_at: new Date().toISOString(),
+      });
+      vaultKey = newKey;
+      broadcast({ type: "vault:password_changed" });
+      return service.getVaultStatus();
+    },
+
+    resetVault() {
+      db.wipeVault();
+      vaultKey = null;
+      broadcast({ type: "vault:reset" });
+      return service.getVaultStatus();
+    },
+
+    /* ----------------------- credentials ----------------------------- */
+    listCredentials(deviceId) {
+      return db.listCredentials(deviceId);
+    },
+
+    getCredentialSecret(id) {
+      if (!vaultKey) throw new Error("Vault is locked");
+      const row = db.getCredentialRaw(id);
+      if (!row) throw new Error("Credential not found");
+      return vault.decryptSecret(vaultKey, {
+        ciphertext: row.secret_ciphertext,
+        iv: row.secret_iv,
+        authTag: row.secret_tag,
+      });
+    },
+
+    createCredential(input) {
+      if (!vaultKey) throw new Error("Vault is locked");
+      if (!input || !input.device_id) throw new Error("device_id is required");
+      if (!db.getDevice(input.device_id)) throw new Error("Device not found");
+      if (!input.label || !input.label.trim()) throw new Error("Label is required");
+      const secret = buildSecretFromInput(input);
+      const encoded = vault.encryptSecret(vaultKey, secret);
+      const created = db.createCredential({
+        device_id: input.device_id,
+        label: input.label.trim(),
+        protocol: input.protocol || "other",
+        host_override: input.host_override || null,
+        port: input.port ?? null,
+        username: input.username || null,
+        secret_type: secret.kind,
+        secret_ciphertext: encoded.ciphertext,
+        secret_iv: encoded.iv,
+        secret_tag: encoded.authTag,
+      });
+      broadcast({ type: "credential:created", credential: created });
+      return created;
+    },
+
+    updateCredential(id, patch) {
+      if (!vaultKey) throw new Error("Vault is locked");
+      const existing = db.getCredentialRaw(id);
+      if (!existing) throw new Error("Credential not found");
+
+      const metaPatch = {};
+      for (const key of ["label", "protocol", "host_override", "port", "username"]) {
+        if (key in patch) metaPatch[key] = patch[key];
+      }
+
+      const touchesSecret =
+        "secret_type" in patch ||
+        "password" in patch ||
+        "privateKey" in patch ||
+        "passphrase" in patch ||
+        "publicKey" in patch;
+
+      if (touchesSecret) {
+        const currentSecret = vault.decryptSecret(vaultKey, {
+          ciphertext: existing.secret_ciphertext,
+          iv: existing.secret_iv,
+          authTag: existing.secret_tag,
+        });
+        const replacingKind = "secret_type" in patch && patch.secret_type !== existing.secret_type;
+        const nextSecret = replacingKind
+          ? buildSecretFromInput(patch)
+          : buildSecretFromInput({ ...currentSecret, secret_type: existing.secret_type, ...patch });
+        const encoded = vault.encryptSecret(vaultKey, nextSecret);
+        metaPatch.secret_type = nextSecret.kind;
+        metaPatch.secret_ciphertext = encoded.ciphertext;
+        metaPatch.secret_iv = encoded.iv;
+        metaPatch.secret_tag = encoded.authTag;
+      }
+
+      const updated = db.updateCredential(id, metaPatch);
+      broadcast({ type: "credential:updated", credential: updated });
+      return updated;
+    },
+
+    deleteCredential(id) {
+      const result = db.deleteCredential(id);
+      broadcast({ type: "credential:deleted", id });
+      return result;
     },
 
     close() {

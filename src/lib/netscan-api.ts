@@ -1,5 +1,9 @@
 import { demoBackend, demoInfo } from "./netscan-demo";
 import type {
+  CredentialInput,
+  CredentialPatch,
+  CredentialRow,
+  CredentialSecret,
   Dashboard,
   DeviceRow,
   HistoryRow,
@@ -9,6 +13,7 @@ import type {
   ScanProgress,
   ScanRow,
   TransportMode,
+  VaultStatus,
 } from "./netscan-types";
 
 /**
@@ -38,6 +43,17 @@ type DesktopBridge = {
   listHistory(deviceId?: string): Promise<HistoryRow[]>;
   exportData(): Promise<{ saved: boolean; filePath?: string }>;
   importTargetsFile(): Promise<{ content: string | null }>;
+  getVaultStatus(): Promise<VaultStatus>;
+  setupVault(password: string): Promise<VaultStatus>;
+  unlockVault(password: string): Promise<VaultStatus>;
+  lockVault(): Promise<VaultStatus>;
+  changeMasterPassword(oldPassword: string, newPassword: string): Promise<VaultStatus>;
+  resetVault(): Promise<VaultStatus>;
+  listCredentials(deviceId?: string): Promise<CredentialRow[]>;
+  getCredentialSecret(id: string): Promise<CredentialSecret>;
+  createCredential(input: CredentialInput): Promise<CredentialRow>;
+  updateCredential(id: string, patch: CredentialPatch): Promise<CredentialRow>;
+  deleteCredential(id: string): Promise<{ ok: boolean }>;
   onEvent(handler: (event: NetscanEvent) => void): () => void;
 };
 
@@ -74,7 +90,10 @@ async function hasServer(): Promise<boolean> {
     // A dev/SPA fallback answers with HTML — only real JSON means the engine is there.
     serverAvailable = response.ok && contentType.includes("application/json");
     if (serverAvailable) {
-      const payload = (await response.clone().json().catch(() => null)) as Info | null;
+      const payload = (await response
+        .clone()
+        .json()
+        .catch(() => null)) as Info | null;
       serverAvailable = Boolean(payload && typeof payload.backend === "string");
     }
   } catch {
@@ -312,6 +331,87 @@ export const netscan = {
       };
       input.click();
     });
+  },
+
+  async getVaultStatus(): Promise<VaultStatus> {
+    const desktop = bridge();
+    if (desktop) return desktop.getVaultStatus();
+    if (await hasServer()) return get<VaultStatus>("/vault/status");
+    return demoBackend.getVaultStatus();
+  },
+
+  async setupVault(password: string): Promise<VaultStatus> {
+    const desktop = bridge();
+    if (desktop) return desktop.setupVault(password);
+    if (await hasServer()) return send<VaultStatus>("/vault/setup", "POST", { password });
+    return demoBackend.setupVault(password);
+  },
+
+  async unlockVault(password: string): Promise<VaultStatus> {
+    const desktop = bridge();
+    if (desktop) return desktop.unlockVault(password);
+    if (await hasServer()) return send<VaultStatus>("/vault/unlock", "POST", { password });
+    return demoBackend.unlockVault(password);
+  },
+
+  async lockVault(): Promise<VaultStatus> {
+    const desktop = bridge();
+    if (desktop) return desktop.lockVault();
+    if (await hasServer()) return send<VaultStatus>("/vault/lock", "POST", {});
+    return demoBackend.lockVault();
+  },
+
+  async changeMasterPassword(oldPassword: string, newPassword: string): Promise<VaultStatus> {
+    const desktop = bridge();
+    if (desktop) return desktop.changeMasterPassword(oldPassword, newPassword);
+    if (await hasServer()) {
+      return send<VaultStatus>("/vault/change-password", "POST", { oldPassword, newPassword });
+    }
+    return demoBackend.changeMasterPassword(oldPassword, newPassword);
+  },
+
+  async resetVault(): Promise<VaultStatus> {
+    const desktop = bridge();
+    if (desktop) return desktop.resetVault();
+    if (await hasServer()) return send<VaultStatus>("/vault/reset", "POST", {});
+    return demoBackend.resetVault();
+  },
+
+  async listCredentials(deviceId?: string): Promise<CredentialRow[]> {
+    const desktop = bridge();
+    if (desktop) return desktop.listCredentials(deviceId);
+    if (await hasServer()) {
+      return get<CredentialRow[]>(`/credentials${deviceId ? `?deviceId=${deviceId}` : ""}`);
+    }
+    return demoBackend.listCredentials(deviceId);
+  },
+
+  async getCredentialSecret(id: string): Promise<CredentialSecret> {
+    const desktop = bridge();
+    if (desktop) return desktop.getCredentialSecret(id);
+    if (await hasServer()) return get<CredentialSecret>(`/credentials/secret?id=${id}`);
+    return demoBackend.getCredentialSecret(id);
+  },
+
+  async createCredential(input: CredentialInput): Promise<CredentialRow> {
+    const desktop = bridge();
+    if (desktop) return desktop.createCredential(input);
+    if (await hasServer()) return send<CredentialRow>("/credentials", "POST", input);
+    return demoBackend.createCredential(input);
+  },
+
+  async updateCredential(id: string, patch: CredentialPatch): Promise<CredentialRow> {
+    const desktop = bridge();
+    if (desktop) return desktop.updateCredential(id, patch);
+    if (await hasServer()) return send<CredentialRow>("/credentials", "PATCH", { id, patch });
+    return demoBackend.updateCredential(id, patch);
+  },
+
+  async deleteCredential(id: string): Promise<{ ok: boolean }> {
+    const desktop = bridge();
+    if (desktop) return desktop.deleteCredential(id);
+    if (await hasServer()) return send<{ ok: boolean }>("/credentials", "DELETE", { id });
+    return demoBackend.deleteCredential(id);
   },
 
   /** Subscribe to live scan events across whichever transport is active. */

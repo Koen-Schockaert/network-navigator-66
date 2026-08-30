@@ -14,8 +14,7 @@ const { createService } = require("../core/service.cjs");
 const PORT = Number(process.env["NETSCAN_PORT"] || 8099) || 8099;
 const HOST = process.env["NETSCAN_HOST"] || "0.0.0.0";
 const DATA_DIR = process.env["NETSCAN_DATA_DIR"] || path.join(process.cwd(), "data");
-const STATIC_DIR =
-  process.env["NETSCAN_STATIC_DIR"] || path.join(__dirname, "..", "dist-app");
+const STATIC_DIR = process.env["NETSCAN_STATIC_DIR"] || path.join(__dirname, "..", "dist-app");
 
 const service = createService({ dbFile: path.join(DATA_DIR, "netscan.db") });
 
@@ -63,7 +62,11 @@ function serveStatic(req, res, pathname) {
   const relative = pathname === "/" ? "/index.html" : pathname;
   const filePath = path.join(STATIC_DIR, path.normalize(relative).replace(/^(\.\.[/\\])+/, ""));
 
-  if (!filePath.startsWith(STATIC_DIR) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+  if (
+    !filePath.startsWith(STATIC_DIR) ||
+    !fs.existsSync(filePath) ||
+    fs.statSync(filePath).isDirectory()
+  ) {
     const indexPath = path.join(STATIC_DIR, "index.html");
     if (fs.existsSync(indexPath)) {
       res.writeHead(200, { "Content-Type": MIME[".html"] });
@@ -112,6 +115,12 @@ async function handleApi(req, res, url) {
         return sendJson(res, 200, service.previewTargets(q.get("target") || ""));
       case "/export":
         return sendJson(res, 200, service.exportAll());
+      case "/vault/status":
+        return sendJson(res, 200, service.getVaultStatus());
+      case "/credentials":
+        return sendJson(res, 200, service.listCredentials(q.get("deviceId") || undefined));
+      case "/credentials/secret":
+        return sendJson(res, 200, service.getCredentialSecret(q.get("id")));
       default:
         return sendJson(res, 404, { error: `Unknown endpoint ${route}` });
     }
@@ -132,6 +141,22 @@ async function handleApi(req, res, url) {
       return sendJson(res, 202, await service.startScan(body.networkId, body.options || {}));
     case "POST /scan/stop":
       return sendJson(res, 200, service.stopScan());
+    case "POST /vault/setup":
+      return sendJson(res, 201, service.setupVault(body.password));
+    case "POST /vault/unlock":
+      return sendJson(res, 200, service.unlockVault(body.password));
+    case "POST /vault/lock":
+      return sendJson(res, 200, service.lockVault());
+    case "POST /vault/change-password":
+      return sendJson(res, 200, service.changeMasterPassword(body.oldPassword, body.newPassword));
+    case "POST /vault/reset":
+      return sendJson(res, 200, service.resetVault());
+    case "POST /credentials":
+      return sendJson(res, 201, service.createCredential(body));
+    case "PATCH /credentials":
+      return sendJson(res, 200, service.updateCredential(body.id, body.patch || {}));
+    case "DELETE /credentials":
+      return sendJson(res, 200, service.deleteCredential(body.id));
     default:
       return sendJson(res, 404, { error: `Unknown endpoint ${method} ${route}` });
   }

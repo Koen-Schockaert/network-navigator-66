@@ -85,9 +85,7 @@ export function NetworksTab({ networks, info, scanning, onRefresh, onScan }: Pro
           source: "auto",
         });
       }
-      setError(
-        additions.length === 0 ? "All detected interfaces are already tracked." : null,
-      );
+      setError(additions.length === 0 ? "All detected interfaces are already tracked." : null);
       onRefresh();
     } finally {
       setBusy(false);
@@ -150,7 +148,12 @@ export function NetworksTab({ networks, info, scanning, onRefresh, onScan }: Pro
               >
                 Add
               </Button>
-              <Button variant="outlined" startIcon={<RadarIcon />} onClick={autoDetect} disabled={busy}>
+              <Button
+                variant="outlined"
+                startIcon={<RadarIcon />}
+                onClick={autoDetect}
+                disabled={busy}
+              >
                 Auto-detect
               </Button>
               <Button variant="text" startIcon={<UploadFileIcon />} onClick={importFile}>
@@ -191,7 +194,10 @@ export function NetworksTab({ networks, info, scanning, onRefresh, onScan }: Pro
           networks.map((network) => (
             <Card key={network.id} sx={{ flex: "1 1 300px", minWidth: 280 }}>
               <CardContent>
-                <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "start" }}>
+                <Stack
+                  direction="row"
+                  sx={{ justifyContent: "space-between", alignItems: "start" }}
+                >
                   <Box sx={{ minWidth: 0 }}>
                     <Typography variant="subtitle1" noWrap>
                       {network.name}
@@ -213,10 +219,18 @@ export function NetworksTab({ networks, info, scanning, onRefresh, onScan }: Pro
                     sx={{ color: statusColors.online }}
                     variant="outlined"
                   />
-                  <Chip size="small" label={`${network.deviceCount ?? 0} known`} variant="outlined" />
+                  <Chip
+                    size="small"
+                    label={`${network.deviceCount ?? 0} known`}
+                    variant="outlined"
+                  />
                 </Stack>
 
-                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.5 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", mt: 1.5 }}
+                >
                   Last scan {relativeTime(network.lastScanAt)}
                 </Typography>
 

@@ -20,6 +20,7 @@ import { ThemeProvider } from "@mui/material/styles";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getTransport, netscan } from "@/lib/netscan-api";
 import type {
+  CredentialRow,
   Dashboard,
   DeviceRow,
   HistoryRow,
@@ -28,8 +29,10 @@ import type {
   ScanProgress,
   ScanRow,
   TransportMode,
+  VaultStatus,
 } from "@/lib/netscan-types";
 import { statusColors, theme } from "@/theme";
+import { CredentialsTab } from "./CredentialsTab";
 import { DashboardTab } from "./DashboardTab";
 import { DevicesTab } from "./DevicesTab";
 import { NetworksTab } from "./NetworksTab";
@@ -60,27 +63,44 @@ export function AppShell() {
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [scans, setScans] = useState<ScanRow[]>([]);
   const [history, setHistory] = useState<HistoryRow[]>([]);
+  const [credentials, setCredentials] = useState<CredentialRow[]>([]);
+  const [vaultStatus, setVaultStatus] = useState<VaultStatus>({
+    configured: false,
+    unlocked: false,
+  });
   const [progress, setProgress] = useState<ScanProgress>({ running: false });
   const [networkFilter, setNetworkFilter] = useState("");
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     try {
-      const [nextDashboard, nextNetworks, nextDevices, nextScans, nextHistory, status] =
-        await Promise.all([
-          netscan.getDashboard(),
-          netscan.listNetworks(),
-          netscan.listDevices(),
-          netscan.listScans(),
-          netscan.listHistory(),
-          netscan.getScanStatus(),
-        ]);
+      const [
+        nextDashboard,
+        nextNetworks,
+        nextDevices,
+        nextScans,
+        nextHistory,
+        status,
+        nextCredentials,
+        nextVaultStatus,
+      ] = await Promise.all([
+        netscan.getDashboard(),
+        netscan.listNetworks(),
+        netscan.listDevices(),
+        netscan.listScans(),
+        netscan.listHistory(),
+        netscan.getScanStatus(),
+        netscan.listCredentials(),
+        netscan.getVaultStatus(),
+      ]);
       setDashboard(nextDashboard);
       setNetworks(nextNetworks);
       setDevices(nextDevices);
       setScans(nextScans);
       setHistory(nextHistory);
       setProgress(status);
+      setCredentials(nextCredentials);
+      setVaultStatus(nextVaultStatus);
     } catch (error) {
       console.error("netscan: failed to load data", error);
     } finally {
@@ -115,21 +135,27 @@ export function AppShell() {
       if (event.type === "scan:finished" || event.type === "scan:error") {
         setProgress({ running: false });
         void refresh();
+        return;
+      }
+      if (event.type === "device:updated" && event.device) {
+        const updated = event.device;
+        setDevices((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+        return;
+      }
+      if (event.type.startsWith("vault:") || event.type.startsWith("credential:")) {
+        void refresh();
       }
     });
   }, [refresh]);
 
-  const startScan = useCallback(
-    async (networkId: string) => {
-      setProgress({ running: true, percent: 0, networkId });
-      try {
-        await netscan.startScan(networkId, { scanPorts: true, resolveHostnames: true });
-      } catch {
-        setProgress({ running: false });
-      }
-    },
-    [],
-  );
+  const startScan = useCallback(async (networkId: string) => {
+    setProgress({ running: true, percent: 0, networkId });
+    try {
+      await netscan.startScan(networkId, { scanPorts: true, resolveHostnames: true });
+    } catch {
+      setProgress({ running: false });
+    }
+  }, []);
 
   const visibleDevices = useMemo(
     () => (networkFilter ? devices.filter((d) => d.network_id === networkFilter) : devices),
@@ -169,8 +195,7 @@ export function AppShell() {
                 label={copy.label}
                 sx={{
                   color: transport === "demo" ? statusColors.alert : statusColors.online,
-                  borderColor:
-                    transport === "demo" ? statusColors.alert : statusColors.online,
+                  borderColor: transport === "demo" ? statusColors.alert : statusColors.online,
                 }}
               />
             </Tooltip>
@@ -205,8 +230,8 @@ export function AppShell() {
               <Stack direction="row" sx={{ justifyContent: "space-between", mb: 0.5 }}>
                 <Typography variant="caption" color="text.secondary">
                   Sweeping {progress.currentIp ? <Mono>{progress.currentIp}</Mono> : "network"} ·{" "}
-                  {progress.completed ?? 0}/{progress.total ?? 0} hosts ·{" "}
-                  {progress.found ?? 0} responding
+                  {progress.completed ?? 0}/{progress.total ?? 0} hosts · {progress.found ?? 0}{" "}
+                  responding
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   {progress.percent ?? 0}%
@@ -224,6 +249,7 @@ export function AppShell() {
               <Tab label={`Devices (${visibleDevices.length})`} />
               <Tab label={`Networks (${networks.length})`} />
               <Tab label="Scans & changes" />
+              <Tab label={`Credentials (${credentials.length})`} />
             </Tabs>
           </Paper>
 
@@ -235,9 +261,12 @@ export function AppShell() {
               devices={visibleDevices}
               networks={networks}
               history={history}
+              credentials={credentials}
+              vaultStatus={vaultStatus}
               info={info}
               networkFilter={networkFilter}
               onNetworkFilter={setNetworkFilter}
+              onRefresh={refresh}
             />
           ) : null}
           {tab === 2 ? (
@@ -250,6 +279,14 @@ export function AppShell() {
             />
           ) : null}
           {tab === 3 ? <ScansTab scans={scans} networks={networks} history={history} /> : null}
+          {tab === 4 ? (
+            <CredentialsTab
+              credentials={credentials}
+              devices={devices}
+              vaultStatus={vaultStatus}
+              onRefresh={refresh}
+            />
+          ) : null}
 
           <Typography
             variant="caption"

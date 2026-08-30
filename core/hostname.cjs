@@ -106,6 +106,48 @@ function reverseName(ip) {
   return `${ip.split(".").reverse().join(".")}.in-addr.arpa`;
 }
 
+/**
+ * Walk every resource record in a DNS/mDNS message (answer, authority and
+ * additional sections) and collect any A record as ip -> hostname. This is
+ * how real mDNS clients (Bonjour/Avahi browsers) discover names in
+ * practice: most consumer/IoT devices never answer a reverse PTR query for
+ * their own address, but they do announce their own A record whenever
+ * anyone asks "what services are out there", or just periodically on their
+ * own. `into` lets callers accumulate across many packets.
+ */
+function collectAddressRecords(buffer, into = new Map()) {
+  if (buffer.length < 12) return into;
+  const qdcount = buffer.readUInt16BE(4);
+  const ancount = buffer.readUInt16BE(6);
+  const nscount = buffer.readUInt16BE(8);
+  const arcount = buffer.readUInt16BE(10);
+
+  let offset = 12;
+  for (let i = 0; i < qdcount; i++) {
+    const parsed = readName(buffer, offset);
+    if (!parsed) return into;
+    offset = parsed.end + 4;
+  }
+
+  const total = ancount + nscount + arcount;
+  for (let i = 0; i < total; i++) {
+    const parsed = readName(buffer, offset);
+    if (!parsed) return into;
+    offset = parsed.end;
+    if (offset + 10 > buffer.length) return into;
+    const type = buffer.readUInt16BE(offset);
+    const rdlength = buffer.readUInt16BE(offset + 8);
+    const rdataOffset = offset + 10;
+    if (rdataOffset + rdlength > buffer.length) return into;
+    if (type === 1 && rdlength === 4 && parsed.name) {
+      const ip = `${buffer[rdataOffset]}.${buffer[rdataOffset + 1]}.${buffer[rdataOffset + 2]}.${buffer[rdataOffset + 3]}`;
+      if (!into.has(ip)) into.set(ip, parsed.name);
+    }
+    offset = rdataOffset + rdlength;
+  }
+  return into;
+}
+
 /* ------------------------------------------------------------------ */
 /* mDNS reverse lookup                                                 */
 /* ------------------------------------------------------------------ */
@@ -153,16 +195,82 @@ function mdnsReverse(ip, timeout = 900) {
   });
 }
 
+/**
+ * Passively collect ip -> hostname bindings from mDNS traffic on the LAN,
+ * nudged by one "enumerate all services" query. A single listen window
+ * covers every device that answers or is already chatting, which in
+ * practice finds far more real names than asking each host individually
+ * for a reverse PTR (see mdnsReverse above) - printers, speakers, NAS
+ * boxes, smart-home gear and routers routinely announce their own A
+ * record this way even when they ignore reverse lookups entirely.
+ */
+function mdnsDiscover(timeout = 2500) {
+  return new Promise((resolve) => {
+    const found = new Map();
+    let socket;
+    try {
+      socket = dgram.createSocket({ type: "udp4", reuseAddr: true });
+    } catch {
+      return resolve(found);
+    }
+
+    socket.on("error", () => {});
+    socket.on("message", (msg) => {
+      try {
+        collectAddressRecords(msg, found);
+      } catch {
+        /* ignore malformed frames */
+      }
+    });
+
+    const finish = () => {
+      try {
+        socket.close();
+      } catch {
+        /* ignore */
+      }
+      resolve(found);
+    };
+    const timer = setTimeout(finish, timeout);
+    if (timer.unref) timer.unref();
+
+    socket.bind(5353, () => {
+      try {
+        socket.addMembership("224.0.0.251");
+        socket.setMulticastTTL(255);
+      } catch {
+        /* binding still lets us receive unicast/already-flowing traffic */
+      }
+      const header = Buffer.alloc(12);
+      header.writeUInt16BE(1, 4); // qdcount
+      const query = Buffer.concat([
+        header,
+        encodeName("_services._dns-sd._udp.local"),
+        Buffer.from([0x00, 0x0c, 0x00, 0x01]), // QTYPE=PTR, QCLASS=IN
+      ]);
+      socket.send(query, 5353, "224.0.0.251", () => {});
+    });
+  });
+}
+
 /* ------------------------------------------------------------------ */
 /* NetBIOS node status                                                 */
 /* ------------------------------------------------------------------ */
 
 function buildNbstatQuery() {
   const header = Buffer.from([
-    0x00, 0x00, // transaction id
-    0x00, 0x00, // flags
-    0x00, 0x01, // qdcount
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00,
+    0x00, // transaction id
+    0x00,
+    0x00, // flags
+    0x00,
+    0x01, // qdcount
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
   ]);
   // Encoded wildcard name "*" -> "CKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
   const encoded = Buffer.from("CKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "ascii");
@@ -183,7 +291,10 @@ function parseNbstat(buffer) {
   offset += 1;
   for (let i = 0; i < count; i++) {
     if (offset + 18 > buffer.length) break;
-    const rawName = buffer.subarray(offset, offset + 15).toString("ascii").trim();
+    const rawName = buffer
+      .subarray(offset, offset + 15)
+      .toString("ascii")
+      .trim();
     const suffix = buffer[offset + 15];
     const flags = buffer.readUInt16BE(offset + 16);
     const isGroup = (flags & 0x8000) !== 0;
@@ -274,4 +385,4 @@ function localResolvers() {
   return [...servers].slice(0, 4);
 }
 
-module.exports = { mdnsReverse, netbiosName, dnsPtr, localResolvers };
+module.exports = { mdnsReverse, mdnsDiscover, netbiosName, dnsPtr, localResolvers };
