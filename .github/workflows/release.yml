@@ -1,0 +1,82 @@
+name: Release
+
+# Triggered by pushing a version tag, e.g.:
+#   v1.2.0            -> stable release
+#   v1.2.0-beta.1      -> beta (prerelease) channel
+#   v1.2.0-alpha.1      -> alpha (prerelease) channel
+# `npm run release:alpha` / `release:beta` / `release:patch` etc. (see package.json)
+# bump the version and create+push the matching tag for you.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            script: package:linux
+            artifact-glob: |
+              electron-release/*.AppImage
+              electron-release/*.deb
+          - os: windows-latest
+            script: package:win
+            artifact-glob: |
+              electron-release/*.exe
+          - os: macos-latest
+            script: package:mac
+            artifact-glob: |
+              electron-release/*.dmg
+              electron-release/*.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run ${{ matrix.script }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: netscan-${{ matrix.os }}
+          path: ${{ matrix.artifact-glob }}
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Determine channel
+        id: channel
+        run: |
+          if [[ "${{ github.ref_name }}" == *-alpha* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_name }}" == *-beta* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          prerelease: ${{ steps.channel.outputs.prerelease }}
+          generate_release_notes: true
+          files: dist/**

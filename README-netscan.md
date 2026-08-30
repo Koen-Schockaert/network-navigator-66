@@ -15,10 +15,40 @@ The same React/Material UI frontend runs in three modes:
 
 ```bash
 npm run electron          # build UI + launch
-npm run package:linux     # -> electron-release/NetScan-linux-x64
-npm run package:win       # Windows x64
-npm run package:mac       # macOS arm64
+npm run package:linux     # -> electron-release/*.AppImage, *.deb
+npm run package:win       # -> electron-release/*.exe (NSIS installer)
+npm run package:mac       # -> electron-release/*.dmg, *.zip
 ```
+
+Packaging uses [electron-builder](https://www.electron.build/) (config in `electron-builder.yml`).
+`core/` has no npm runtime dependencies (Node builtins only), so the packaged app ships
+`electron/`, `core/` and the built `dist-app/` SPA with no `node_modules`.
+
+## Releases (alpha / beta / stable)
+
+Three long-lived branches map to release channels:
+
+| Branch  | Channel | Tag pattern       |
+| ------- | ------- | ------------------ |
+| `alpha` | Alpha   | `vX.Y.Z-alpha.N`   |
+| `beta`  | Beta    | `vX.Y.Z-beta.N`    |
+| `main`  | Stable  | `vX.Y.Z`           |
+
+Work flows `alpha` → `beta` → `main` via PRs. Pushing a version tag on any branch triggers
+`.github/workflows/release.yml`, which builds Windows/macOS/Linux installers and publishes a
+GitHub Release (marked as a prerelease for `-alpha`/`-beta` tags).
+
+To cut a release, from the target branch:
+
+```bash
+npm run release:alpha   # bump to next X.Y.Z-alpha.N, commit, tag, push
+npm run release:beta    # bump to next X.Y.Z-beta.N, commit, tag, push
+npm run release:patch   # stable patch bump (also: release:minor, release:major)
+```
+
+These wrap `npm version`, which commits the `package.json` bump and creates the tag; the
+`postversion` script pushes the commit and tag. `.github/workflows/ci.yml` runs lint + a
+desktop-SPA build on every push/PR to `main`, `beta`, and `alpha`.
 
 ## Docker
 

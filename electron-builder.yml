@@ -1,0 +1,47 @@
+# electron-builder config for the NetScan desktop app.
+# Packages electron/ (main + preload) and core/ (scanner engine) around the
+# static dist-app/ SPA build — see npm run build:app. No node_modules are
+# needed at runtime: core/ only uses Node builtins (see CLAUDE.md).
+appId: com.netscan.app
+productName: NetScan
+copyright: "Copyright © ${author}"
+
+directories:
+  output: electron-release
+  buildResources: build
+
+files:
+  - electron/**/*
+  - core/**/*
+  - dist-app/**/*
+  - package.json
+  - "!**/*.map"
+  - "!node_modules/**/*"
+
+mac:
+  category: public.app-category.utilities
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+
+linux:
+  category: Network
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+
+publish: null

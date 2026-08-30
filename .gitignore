@@ -32,3 +32,6 @@ dist-ssr
 *.sw?
 
 package-lock.json
+
+# Desktop app packaging output
+electron-release/
