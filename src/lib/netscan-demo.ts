@@ -501,7 +501,9 @@ export const demoBackend = {
       const current = demoSecrets.get(id);
       if (patch.secret_type === "ssh_key") {
         const base =
-          current?.kind === "ssh_key" ? current : { privateKey: "", passphrase: "", publicKey: null };
+          current?.kind === "ssh_key"
+            ? current
+            : { privateKey: "", passphrase: "", publicKey: null };
         demoSecrets.set(id, {
           kind: "ssh_key",
           privateKey: patch.privateKey ?? base.privateKey,
