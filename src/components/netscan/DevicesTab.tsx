@@ -54,6 +54,7 @@ import {
 
 type Props = {
   devices: DeviceRow[];
+  allDevices: DeviceRow[];
   networks: NetworkRow[];
   history: HistoryRow[];
   credentials: CredentialRow[];
@@ -74,6 +75,7 @@ type Props = {
 
 export function DevicesTab({
   devices,
+  allDevices,
   networks,
   history,
   credentials,
@@ -93,8 +95,8 @@ export function DevicesTab({
 }: Props) {
   const [search, setSearch] = useState("");
   const selected = useMemo(
-    () => devices.find((device) => device.id === selectedDeviceId) ?? null,
-    [devices, selectedDeviceId],
+    () => allDevices.find((device) => device.id === selectedDeviceId) ?? null,
+    [allDevices, selectedDeviceId],
   );
   const labels = useMemo(() => info?.portLabels ?? {}, [info?.portLabels]);
 

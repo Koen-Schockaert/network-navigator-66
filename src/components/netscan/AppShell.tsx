@@ -198,11 +198,6 @@ export function AppShell() {
     [],
   );
 
-  const onSelectDeviceFromDashboard = useCallback((id: string) => {
-    setSelectedDeviceId(id);
-    setTab(1);
-  }, []);
-
   const scanning = Boolean(progress.running);
   const copy = TRANSPORT_COPY[transport];
 
@@ -299,16 +294,17 @@ export function AppShell() {
           <Box sx={{ display: tab === 0 ? "block" : "none" }}>
             <DashboardTab
               data={dashboard}
-              devices={visibleDevices}
+              devices={devices}
               newDeviceIds={newDeviceIds}
               missingDeviceIds={missingDeviceIds}
               onFilterDevices={onFilterDevices}
-              onSelectDevice={onSelectDeviceFromDashboard}
+              onSelectDevice={setSelectedDeviceId}
             />
           </Box>
           <Box sx={{ display: tab === 1 ? "block" : "none" }}>
             <DevicesTab
               devices={visibleDevices}
+              allDevices={devices}
               networks={networks}
               history={history}
               credentials={credentials}
@@ -337,7 +333,13 @@ export function AppShell() {
             />
           </Box>
           <Box sx={{ display: tab === 3 ? "block" : "none" }}>
-            <ScansTab scans={scans} networks={networks} history={history} />
+            <ScansTab
+              scans={scans}
+              networks={networks}
+              history={history}
+              devices={devices}
+              onSelectDevice={setSelectedDeviceId}
+            />
           </Box>
           <Box sx={{ display: tab === 4 ? "block" : "none" }}>
             <CredentialsTab

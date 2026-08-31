@@ -10,7 +10,8 @@ import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
-import type { HistoryRow, NetworkRow, ScanRow } from "@/lib/netscan-types";
+import { useMemo } from "react";
+import type { DeviceRow, HistoryRow, NetworkRow, ScanRow } from "@/lib/netscan-types";
 import { statusColors } from "@/theme";
 import { HISTORY_LABELS, Mono, historyColor, relativeTime } from "./shared";
 
@@ -18,6 +19,8 @@ type Props = {
   scans: ScanRow[];
   networks: NetworkRow[];
   history: HistoryRow[];
+  devices: DeviceRow[];
+  onSelectDevice: (deviceId: string) => void;
 };
 
 function duration(scan: ScanRow) {
@@ -27,8 +30,9 @@ function duration(scan: ScanRow) {
   return ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)}m`;
 }
 
-export function ScansTab({ scans, networks, history }: Props) {
+export function ScansTab({ scans, networks, history, devices, onSelectDevice }: Props) {
   const nameFor = (id: string) => networks.find((n) => n.id === id)?.name ?? id;
+  const deviceById = useMemo(() => new Map(devices.map((d) => [d.id, d])), [devices]);
 
   return (
     <Stack direction={{ xs: "column", lg: "row" }} spacing={2.5}>
@@ -113,37 +117,52 @@ export function ScansTab({ scans, networks, history }: Props) {
                 Nothing recorded yet.
               </Typography>
             ) : (
-              history.map((entry) => (
-                <Stack
-                  key={entry.id}
-                  direction="row"
-                  spacing={1.5}
-                  sx={{ py: 1.1, alignItems: "center" }}
-                >
-                  <Box
+              history.map((entry) => {
+                const device = deviceById.get(entry.device_id);
+                const deviceName = device?.label || device?.hostname || entry.device_id;
+                return (
+                  <Stack
+                    key={entry.id}
+                    direction="row"
+                    spacing={1.5}
+                    onClick={device ? () => onSelectDevice(device.id) : undefined}
                     sx={{
-                      width: 6,
-                      height: 24,
+                      py: 1.1,
+                      alignItems: "center",
+                      cursor: device ? "pointer" : "default",
                       borderRadius: 1,
-                      backgroundColor: historyColor(entry.event),
-                      flexShrink: 0,
+                      px: 0.5,
+                      mx: -0.5,
+                      "&:hover": device ? { backgroundColor: "action.hover" } : undefined,
                     }}
-                  />
-                  <Box sx={{ minWidth: 0, flex: 1 }}>
-                    <Typography variant="body2" noWrap>
-                      {HISTORY_LABELS[entry.event] || entry.event}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      noWrap
-                      sx={{ display: "block" }}
-                    >
-                      {entry.detail} · {relativeTime(entry.created_at)}
-                    </Typography>
-                  </Box>
-                </Stack>
-              ))
+                  >
+                    <Box
+                      sx={{
+                        width: 6,
+                        height: 24,
+                        borderRadius: 1,
+                        backgroundColor: historyColor(entry.event),
+                        flexShrink: 0,
+                      }}
+                    />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="body2" noWrap>
+                        <strong>{deviceName}</strong>
+                        {" — "}
+                        {HISTORY_LABELS[entry.event] || entry.event}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        noWrap
+                        sx={{ display: "block" }}
+                      >
+                        <Mono>{entry.detail}</Mono> · {relativeTime(entry.created_at)}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                );
+              })
             )}
           </Stack>
         </CardContent>
