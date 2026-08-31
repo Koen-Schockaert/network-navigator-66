@@ -1,0 +1,17 @@
+configuration:
+  port:
+    name: Port
+    description: >-
+      TCP port the NetScan web UI listens on. Since this add-on uses host
+      networking, this is also the port you browse to on your Home Assistant
+      host's IP.
+  default_subnet:
+    name: Default subnet
+    description: >-
+      CIDR to auto-seed as a network on first boot, e.g. 192.168.1.0/24.
+      Leave empty and add networks from the NetScan UI instead.
+  interval_minutes:
+    name: Scan interval (minutes)
+    description: >-
+      Enables scheduled automatic scans on this interval. Set to 0 to
+      disable scheduled scans (you can still trigger scans manually).

@@ -62,6 +62,18 @@ that entirely.
 `.github/workflows/ci.yml` runs lint + a desktop-SPA build on every push/PR to `main`,
 `beta`, and `alpha` — a quick sanity check, independent of the release pipeline.
 
+A third job, **`docker`**, builds the server image (root `Dockerfile`) for `linux/amd64` and
+`linux/arm64` and pushes it to `ghcr.io/<owner>/netscan`, tagged with the release version and,
+for stable (non-alpha/beta) tags, also `:latest`. This is the same image both plain
+`docker-compose` deployments and the Home Assistant add-on (`netscan/config.yaml`'s `image:`
+field) pull — see [netscan/README.md](netscan/README.md). After the **first** run of this job,
+the GHCR package defaults to private; open its package settings on GitHub and set it to public
+(and link it to this repo), otherwise Supervisor can't pull it anonymously.
+
+**`netscan/config.yaml`'s `version:` is not bumped automatically** — after cutting a release,
+update it by hand to match the new `package.json` version so the Home Assistant add-on store
+picks up the new image.
+
 ## Checking on a release
 
 ```bash

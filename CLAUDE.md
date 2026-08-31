@@ -22,6 +22,18 @@ falls back to demo data):
 | Desktop (Electron)    | real ICMP/ARP/TCP                                | `electron/main.cjs` + `electron/preload.cjs` | `npm run electron`  |
 | Container (Docker)    | real, on host network                            | `server/index.cjs`                           | `npm run docker:up` |
 
+There's also a fourth distribution path riding on top of the Docker one: the `netscan/` folder
+at repo root is a **Home Assistant add-on** manifest (`config.yaml`, `DOCS.md`, etc.), paired
+with `repository.yaml` at repo root so the whole repo can be added as an HA add-on repository.
+It doesn't build its own image — `netscan/config.yaml`'s `image:` field points at
+`ghcr.io/<owner>/netscan`, the same multi-arch image the `docker` job in
+`.github/workflows/release.yml` publishes from the root `Dockerfile` on every tagged release.
+`docker/entrypoint.sh` is what makes one image serve both consumers: it reads
+`/data/options.json` when Supervisor mounts it (translating add-on options into the usual
+`NETSCAN_*` env vars) and otherwise falls through to whatever env vars a plain
+docker-compose deployment already set. See `netscan/DOCS.md` for known limitations (no Ingress
+support yet, no HA entities).
+
 Electron and Docker both load the **same static SPA** (`app/` entry, built by `vite.app.config.mts`
 into `dist-app/`) and the **same `core/` engine** — they differ only in how the frontend talks to it:
 Electron uses `contextBridge`-exposed IPC (`window.netscan`, wired in `electron/preload.cjs`), Docker

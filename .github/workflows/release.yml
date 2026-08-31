@@ -17,10 +17,13 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.channel.outputs.prerelease }}
     steps:
       - name: Determine channel
         id: channel
@@ -75,3 +78,47 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           files: ${{ matrix.artifact-glob }}
+
+  # Multi-arch server image consumed both by plain `docker run`/docker-compose
+  # deployments and by the Home Assistant add-on (netscan/config.yaml's
+  # `image:` field references this same image — see netscan/README.md).
+  docker:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image name
+        id: image
+        run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/netscan" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: tags
+        run: |
+          image="${{ steps.image.outputs.name }}"
+          version="${GITHUB_REF_NAME#v}"
+          tags="${image}:${version}"
+          if [ "${{ needs.create-release.outputs.prerelease }}" = "false" ]; then
+            tags="$(printf '%s\n%s' "$tags" "${image}:latest")"
+          fi
+          {
+            echo "value<<EOF"
+            echo "$tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.value }}

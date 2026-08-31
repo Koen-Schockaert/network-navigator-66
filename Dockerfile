@@ -14,12 +14,15 @@ RUN npx vite build --config vite.app.config.mts
 FROM node:22-alpine AS runtime
 WORKDIR /app
 
-# iputils gives a real ping binary; arp-scan style discovery uses the kernel ARP table
-RUN apk add --no-cache iputils net-tools
+# iputils gives a real ping binary; arp-scan style discovery uses the kernel ARP
+# table; jq lets the entrypoint read Home Assistant Supervisor's options.json
+RUN apk add --no-cache iputils net-tools jq
 
 COPY core ./core
 COPY server ./server
+COPY docker/entrypoint.sh ./entrypoint.sh
 COPY --from=build /build/dist-app ./dist-app
+RUN chmod +x ./entrypoint.sh
 
 ENV NODE_ENV=production \
     NETSCAN_PORT=8099 \
@@ -30,4 +33,4 @@ ENV NODE_ENV=production \
 VOLUME ["/data"]
 EXPOSE 8099
 
-CMD ["node", "server/index.cjs"]
+CMD ["./entrypoint.sh"]
