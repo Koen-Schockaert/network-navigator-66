@@ -13,12 +13,14 @@ host_network: true
 privileged:
   - NET_RAW
   - NET_ADMIN
-webui: "http://[HOST]:[PORT:8099]/"
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:lan
+panel_title: NetScan
+panel_admin: true
 options:
-  port: 8099
   default_subnet: ""
   interval_minutes: 0
 schema:
-  port: "port"
   default_subnet: "str?"
   interval_minutes: "int(0,1440)?"

@@ -2,20 +2,24 @@
 
 ## Configuration
 
-| Option             | Default | Description                                                                      |
-| ------------------- | ------- | --------------------------------------------------------------------------------- |
-| `port`              | `8099`  | Port the web UI listens on (host networking, so this is the port on the HA host). |
-| `default_subnet`     | _(empty)_ | CIDR auto-seeded as a network on first boot, e.g. `192.168.1.0/24`.             |
-| `interval_minutes`   | `0`     | Enables scheduled automatic scans on this interval. `0` disables scheduling.     |
+| Option             | Default | Description                                                                  |
+| ------------------- | ------- | ----------------------------------------------------------------------------- |
+| `default_subnet`     | _(empty)_ | CIDR auto-seeded as a network on first boot, e.g. `192.168.1.0/24`.         |
+| `interval_minutes`   | `0`     | Enables scheduled automatic scans on this interval. `0` disables scheduling. |
+
+The web UI always listens on port 8099 internally (fixed — see `netscan/config.yaml`'s
+`ingress_port`); it's not user-configurable.
 
 Scan data (networks, devices, scan history) persists in the add-on's `/data` volume, which
 Supervisor manages automatically — it survives add-on restarts and updates.
 
 ## Accessing the UI
 
-Click "OPEN WEB UI" on the add-on's Info page, or browse directly to
-`http://<home-assistant-host>:<port>/`. There is no Ingress support yet (see below), so the UI
-is not embedded in the Home Assistant sidebar — it opens as its own page/tab.
+NetScan appears as its own panel in the Home Assistant sidebar (via Ingress) — click it, or use
+"OPEN WEB UI" on the add-on's Info page. The panel is admin-only (`panel_admin: true`), matching
+who could already reach the add-on's Info page. Ingress means Home Assistant proxies the UI
+through its own authenticated session — no separate login, and port 8099 isn't exposed outside
+that proxy.
 
 ## Requirements
 
@@ -26,9 +30,6 @@ is not embedded in the Home Assistant sidebar — it opens as its own page/tab.
 
 ## Known limitations
 
-- **No Ingress.** The frontend calls its API with root-relative paths (`/api/...`), which
-  doesn't survive Supervisor's per-add-on Ingress path prefix without a frontend change to make
-  those calls path-relative. Until that's done, the add-on exposes its port directly instead.
 - **No Home Assistant entities.** This add-on does not create HA sensors/device_trackers from
   scan results — it's a standalone inventory UI, not an integration. That would be a separate,
   larger feature (a custom integration reading from NetScan's API/DB).

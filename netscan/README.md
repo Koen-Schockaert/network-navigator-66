@@ -13,8 +13,8 @@ scanner itself works.
 1. Settings → Add-ons → Add-on Store → ⋮ → Repositories → add this repository's URL.
 2. Find "NetScan" in the store and click Install.
 3. Set the `default_subnet` option (optional) and start the add-on.
-4. Open the web UI via the "OPEN WEB UI" button, or browse to
-   `http://<home-assistant-host>:8099`.
+4. Open NetScan from the Home Assistant sidebar, or via the "OPEN WEB UI" button on the add-on's
+   Info page — it runs embedded through Ingress, no separate port or login needed.
 
 ## Why host networking + NET_RAW/NET_ADMIN
 

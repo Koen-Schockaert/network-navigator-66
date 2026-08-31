@@ -31,8 +31,12 @@ It doesn't build its own image — `netscan/config.yaml`'s `image:` field points
 `docker/entrypoint.sh` is what makes one image serve both consumers: it reads
 `/data/options.json` when Supervisor mounts it (translating add-on options into the usual
 `NETSCAN_*` env vars) and otherwise falls through to whatever env vars a plain
-docker-compose deployment already set. See `netscan/DOCS.md` for known limitations (no Ingress
-support yet, no HA entities).
+docker-compose deployment already set. The add-on runs behind Home Assistant Ingress (embedded
+sidebar panel, `netscan/config.yaml`'s `ingress: true`/`ingress_port: 8099`) — that's why
+`src/lib/netscan-api.ts`'s `fetch`/`EventSource` calls use relative (`api/...`), not
+root-absolute (`/api/...`), paths: a leading slash would resolve against the origin root and
+miss Supervisor's per-add-on Ingress path prefix. See `netscan/DOCS.md` for known limitations
+(no HA entities).
 
 Electron and Docker both load the **same static SPA** (`app/` entry, built by `vite.app.config.mts`
 into `dist-app/`) and the **same `core/` engine** — they differ only in how the frontend talks to it:

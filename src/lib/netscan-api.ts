@@ -88,7 +88,9 @@ async function hasServer(): Promise<boolean> {
   if (typeof window === "undefined") return false;
   if (serverAvailable !== null) return serverAvailable;
   try {
-    const response = await fetch("/api/info", { signal: AbortSignal.timeout(1500) });
+    // Relative (no leading slash) so this still resolves correctly when the
+    // page is served under a path prefix, e.g. Home Assistant Ingress.
+    const response = await fetch("api/info", { signal: AbortSignal.timeout(1500) });
     const contentType = response.headers.get("content-type") || "";
     // A dev/SPA fallback answers with HTML — only real JSON means the engine is there.
     serverAvailable = response.ok && contentType.includes("application/json");
@@ -111,13 +113,13 @@ export async function getTransport(): Promise<TransportMode> {
 }
 
 async function get<T>(path: string): Promise<T> {
-  const response = await fetch(`/api${path}`);
+  const response = await fetch(`api${path}`);
   if (!response.ok) throw new Error(await response.text());
   return (await response.json()) as T;
 }
 
 async function send<T>(path: string, method: string, body: unknown): Promise<T> {
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(`api${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body ?? {}),
@@ -464,7 +466,7 @@ export const netscan = {
     if (desktop) return desktop.onEvent(handler);
 
     if (serverAvailable) {
-      const source = new EventSource("/api/events");
+      const source = new EventSource("api/events");
       source.onmessage = (message) => {
         try {
           handler(JSON.parse(message.data) as NetscanEvent);
