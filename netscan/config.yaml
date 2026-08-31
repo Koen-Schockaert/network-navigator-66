@@ -13,7 +13,7 @@ host_network: true
 privileged:
   - NET_RAW
   - NET_ADMIN
-webui: "http://[HOST]:8099/"
+webui: "http://[HOST]:[PORT:8099]/"
 options:
   port: 8099
   default_subnet: ""
