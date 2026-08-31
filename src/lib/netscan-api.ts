@@ -465,19 +465,34 @@ export const netscan = {
     const desktop = bridge();
     if (desktop) return desktop.onEvent(handler);
 
-    if (serverAvailable) {
-      const source = new EventSource("api/events");
-      source.onmessage = (message) => {
-        try {
-          handler(JSON.parse(message.data) as NetscanEvent);
-        } catch {
-          /* ignore malformed frames */
-        }
-      };
-      return () => source.close();
-    }
+    // hasServer() may still be resolving the first time a caller subscribes
+    // (e.g. mounted before getTransport()'s probe lands) — wait for the real
+    // answer instead of reading the (possibly still-null) cached flag, or
+    // this silently attaches to the demo bus, which real scans never publish to.
+    let cancelled = false;
+    let teardown: (() => void) | null = null;
 
-    demoListeners.add(handler);
-    return () => demoListeners.delete(handler);
+    void hasServer().then((available) => {
+      if (cancelled) return;
+      if (available) {
+        const source = new EventSource("api/events");
+        source.onmessage = (message) => {
+          try {
+            handler(JSON.parse(message.data) as NetscanEvent);
+          } catch {
+            /* ignore malformed frames */
+          }
+        };
+        teardown = () => source.close();
+      } else {
+        demoListeners.add(handler);
+        teardown = () => demoListeners.delete(handler);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      teardown?.();
+    };
   },
 };
