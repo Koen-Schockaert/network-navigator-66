@@ -8,7 +8,7 @@ import Typography from "@mui/material/Typography";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { netscan } from "@/lib/netscan-api";
-import type { CredentialSecret } from "@/lib/netscan-types";
+import type { CredentialSecret, HistoryRow } from "@/lib/netscan-types";
 import { mono, statusColors } from "@/theme";
 
 export function Mono({ children }: { children: ReactNode }) {
@@ -56,15 +56,35 @@ export function StatCard({
   hint,
   accent = "primary.main",
   icon,
+  onClick,
 }: {
   label: string;
   value: ReactNode;
   hint?: string;
   accent?: string;
   icon?: ReactNode;
+  onClick?: () => void;
 }) {
   return (
-    <Card sx={{ flex: "1 1 190px", minWidth: 180, position: "relative", overflow: "hidden" }}>
+    <Card
+      onClick={onClick}
+      sx={{
+        flex: "1 1 190px",
+        minWidth: 180,
+        position: "relative",
+        overflow: "hidden",
+        cursor: onClick ? "pointer" : "default",
+        transition: "border-color 0.15s ease, box-shadow 0.15s ease",
+        ...(onClick
+          ? {
+              "&:hover": {
+                borderColor: accent,
+                boxShadow: `0 0 0 1px ${accent}`,
+              },
+            }
+          : {}),
+      }}
+    >
       <Box
         sx={{
           position: "absolute",
@@ -151,6 +171,19 @@ export function historyColor(event: string) {
   if (event === "status_change") return statusColors.alert;
   if (event === "ports_changed") return statusColors.danger;
   return statusColors.offline;
+}
+
+export function deriveScanDeltas(history: HistoryRow[], latestScanId: string | null) {
+  if (!latestScanId) return { newDeviceIds: [] as string[], missingDeviceIds: [] as string[] };
+  const scanHistory = history.filter((entry) => entry.scan_id === latestScanId);
+  return {
+    newDeviceIds: scanHistory
+      .filter((entry) => entry.event === "first_seen")
+      .map((entry) => entry.device_id),
+    missingDeviceIds: scanHistory
+      .filter((entry) => entry.event === "status_change" && entry.detail === "No longer responding")
+      .map((entry) => entry.device_id),
+  };
 }
 
 /**

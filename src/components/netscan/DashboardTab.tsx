@@ -10,15 +10,39 @@ import Divider from "@mui/material/Divider";
 import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import { useMemo } from "react";
 import { categoryMeta } from "@/lib/device-categories";
-import type { Dashboard } from "@/lib/netscan-types";
+import type { Dashboard, DeviceRow } from "@/lib/netscan-types";
 import { statusColors } from "@/theme";
 import { HISTORY_LABELS, Mono, StatCard, historyColor, relativeTime } from "./shared";
 
-export function DashboardTab({ data }: { data: Dashboard | null }) {
+type DeviceFilter = {
+  status?: "all" | "online" | "offline";
+  category?: string | null;
+  deviceIds?: string[] | null;
+};
+
+type Props = {
+  data: Dashboard | null;
+  devices: DeviceRow[];
+  newDeviceIds: string[];
+  missingDeviceIds: string[];
+  onFilterDevices: (filter: DeviceFilter) => void;
+  onSelectDevice: (deviceId: string) => void;
+};
+
+export function DashboardTab({
+  data,
+  devices,
+  newDeviceIds,
+  missingDeviceIds,
+  onFilterDevices,
+  onSelectDevice,
+}: Props) {
+  const deviceById = useMemo(() => new Map(devices.map((d) => [d.id, d])), [devices]);
+
   if (!data) return <LinearProgress />;
 
-  const maxVendor = Math.max(1, ...data.vendors.map((v) => v.count));
   const maxCategory = Math.max(1, ...data.categories.map((c) => c.count));
 
   return (
@@ -29,6 +53,7 @@ export function DashboardTab({ data }: { data: Dashboard | null }) {
           value={data.totalDevices}
           hint={`across ${data.networks} network${data.networks === 1 ? "" : "s"}`}
           icon={<DevicesIcon fontSize="small" />}
+          onClick={() => onFilterDevices({})}
         />
         <StatCard
           label="Online"
@@ -36,6 +61,7 @@ export function DashboardTab({ data }: { data: Dashboard | null }) {
           hint={`last scan ${relativeTime(data.lastScanAt)}`}
           accent={statusColors.online}
           icon={<WifiTetheringIcon fontSize="small" />}
+          onClick={() => onFilterDevices({ status: "online" })}
         />
         <StatCard
           label="Offline"
@@ -43,6 +69,7 @@ export function DashboardTab({ data }: { data: Dashboard | null }) {
           hint="seen before, quiet now"
           accent={statusColors.offline}
           icon={<SignalWifiOffIcon fontSize="small" />}
+          onClick={() => onFilterDevices({ status: "offline" })}
         />
         <StatCard
           label="New"
@@ -50,6 +77,7 @@ export function DashboardTab({ data }: { data: Dashboard | null }) {
           hint="first seen in last scan"
           accent={statusColors.info}
           icon={<FiberNewIcon fontSize="small" />}
+          onClick={() => onFilterDevices({ deviceIds: newDeviceIds })}
         />
         <StatCard
           label="Disappeared"
@@ -57,6 +85,7 @@ export function DashboardTab({ data }: { data: Dashboard | null }) {
           hint="missing since last scan"
           accent={statusColors.alert}
           icon={<LanIcon fontSize="small" />}
+          onClick={() => onFilterDevices({ deviceIds: missingDeviceIds })}
         />
       </Stack>
 
@@ -76,7 +105,19 @@ export function DashboardTab({ data }: { data: Dashboard | null }) {
                 const meta = categoryMeta(entry.category);
                 const Icon = meta.icon;
                 return (
-                  <Box key={entry.category} sx={{ minWidth: 170, flex: "1 1 170px" }}>
+                  <Box
+                    key={entry.category}
+                    onClick={() => onFilterDevices({ category: entry.category })}
+                    sx={{
+                      minWidth: 170,
+                      flex: "1 1 170px",
+                      cursor: "pointer",
+                      borderRadius: 1,
+                      p: 0.5,
+                      m: -0.5,
+                      "&:hover": { backgroundColor: "action.hover" },
+                    }}
+                  >
                     <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 0.5 }}>
                       <Icon fontSize="small" color="action" />
                       <Typography variant="body2" sx={{ flex: 1 }}>
@@ -98,60 +139,40 @@ export function DashboardTab({ data }: { data: Dashboard | null }) {
         </CardContent>
       </Card>
 
-      <Stack direction={{ xs: "column", lg: "row" }} spacing={2.5} sx={{ alignItems: "stretch" }}>
-        <Card sx={{ flex: 1 }}>
-          <CardContent>
-            <Typography variant="h6">Vendor breakdown</Typography>
-            <Typography variant="caption" color="text.secondary">
-              Derived from MAC address OUI prefixes
-            </Typography>
-            <Stack spacing={1.5} sx={{ mt: 2 }}>
-              {data.vendors.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  No devices yet — run a scan to populate this view.
-                </Typography>
-              ) : (
-                data.vendors.map((vendor) => (
-                  <Box key={vendor.vendor}>
-                    <Stack direction="row" sx={{ justifyContent: "space-between", mb: 0.5 }}>
-                      <Typography variant="body2">{vendor.vendor}</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {vendor.count}
-                      </Typography>
-                    </Stack>
-                    <LinearProgress
-                      variant="determinate"
-                      value={(vendor.count / maxVendor) * 100}
-                    />
-                  </Box>
-                ))
-              )}
-            </Stack>
-          </CardContent>
-        </Card>
-
-        <Card sx={{ flex: 1 }}>
-          <CardContent>
-            <Typography variant="h6">Recent changes</Typography>
-            <Typography variant="caption" color="text.secondary">
-              Every difference detected between scans
-            </Typography>
-            <Stack
-              spacing={0}
-              divider={<Divider flexItem />}
-              sx={{ mt: 2, maxHeight: 320, overflowY: "auto" }}
-            >
-              {data.recentHistory.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  Nothing recorded yet.
-                </Typography>
-              ) : (
-                data.recentHistory.map((entry) => (
+      <Card>
+        <CardContent>
+          <Typography variant="h6">Recent changes</Typography>
+          <Typography variant="caption" color="text.secondary">
+            Every difference detected between scans
+          </Typography>
+          <Stack
+            spacing={0}
+            divider={<Divider flexItem />}
+            sx={{ mt: 2, maxHeight: 320, overflowY: "auto" }}
+          >
+            {data.recentHistory.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                Nothing recorded yet.
+              </Typography>
+            ) : (
+              data.recentHistory.map((entry) => {
+                const device = deviceById.get(entry.device_id);
+                const deviceName = device?.label || device?.hostname || entry.device_id;
+                return (
                   <Stack
                     key={entry.id}
                     direction="row"
                     spacing={1.5}
-                    sx={{ py: 1.25, alignItems: "center" }}
+                    onClick={device ? () => onSelectDevice(device.id) : undefined}
+                    sx={{
+                      py: 1.25,
+                      alignItems: "center",
+                      cursor: device ? "pointer" : "default",
+                      borderRadius: 1,
+                      px: 0.5,
+                      mx: -0.5,
+                      "&:hover": device ? { backgroundColor: "action.hover" } : undefined,
+                    }}
                   >
                     <Box
                       sx={{
@@ -164,21 +185,21 @@ export function DashboardTab({ data }: { data: Dashboard | null }) {
                     />
                     <Box sx={{ minWidth: 0, flex: 1 }}>
                       <Typography variant="body2" noWrap>
-                        {HISTORY_LABELS[entry.event] || entry.event}
+                        <strong>{deviceName}</strong>
                         {" — "}
-                        <Mono>{entry.detail}</Mono>
+                        {HISTORY_LABELS[entry.event] || entry.event}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {relativeTime(entry.created_at)}
+                      <Typography variant="caption" color="text.secondary" noWrap>
+                        <Mono>{entry.detail}</Mono> · {relativeTime(entry.created_at)}
                       </Typography>
                     </Box>
                   </Stack>
-                ))
-              )}
-            </Stack>
-          </CardContent>
-        </Card>
-      </Stack>
+                );
+              })
+            )}
+          </Stack>
+        </CardContent>
+      </Card>
     </Stack>
   );
 }

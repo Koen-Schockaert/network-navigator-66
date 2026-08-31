@@ -1,4 +1,5 @@
 import AddIcon from "@mui/icons-material/Add";
+import CloseIcon from "@mui/icons-material/Close";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import EditIcon from "@mui/icons-material/Edit";
@@ -60,6 +61,14 @@ type Props = {
   info: Info | null;
   networkFilter: string;
   onNetworkFilter: (value: string) => void;
+  status: "all" | "online" | "offline";
+  onStatusChange: (value: "all" | "online" | "offline") => void;
+  categoryFilter: string;
+  onCategoryChange: (value: string) => void;
+  deviceIdFilter: string[] | null;
+  onClearDeviceIdFilter: () => void;
+  selectedDeviceId: string | null;
+  onSelectDevice: (id: string | null) => void;
   onRefresh: () => void;
 };
 
@@ -72,15 +81,20 @@ export function DevicesTab({
   info,
   networkFilter,
   onNetworkFilter,
+  status,
+  onStatusChange,
+  categoryFilter,
+  onCategoryChange,
+  deviceIdFilter,
+  onClearDeviceIdFilter,
+  selectedDeviceId,
+  onSelectDevice,
   onRefresh,
 }: Props) {
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<"all" | "online" | "offline">("all");
-  const [categoryFilter, setCategoryFilter] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = useMemo(
-    () => devices.find((device) => device.id === selectedId) ?? null,
-    [devices, selectedId],
+    () => devices.find((device) => device.id === selectedDeviceId) ?? null,
+    [devices, selectedDeviceId],
   );
   const labels = useMemo(() => info?.portLabels ?? {}, [info?.portLabels]);
 
@@ -90,12 +104,13 @@ export function DevicesTab({
       if (status === "online" && !device.online) return false;
       if (status === "offline" && device.online) return false;
       if (categoryFilter && (device.category || "uncategorized") !== categoryFilter) return false;
+      if (deviceIdFilter && !deviceIdFilter.includes(device.id)) return false;
       if (!needle) return true;
       return [device.ip, device.hostname, device.mac, device.vendor, device.notes, device.label]
         .filter(Boolean)
         .some((field) => String(field).toLowerCase().includes(needle));
     });
-  }, [devices, search, status, categoryFilter]);
+  }, [devices, search, status, categoryFilter, deviceIdFilter]);
 
   const columns: GridColDef<DeviceRow>[] = useMemo(
     () => [
@@ -301,7 +316,7 @@ export function DevicesTab({
           select
           label="Category"
           value={categoryFilter}
-          onChange={(event) => setCategoryFilter(event.target.value)}
+          onChange={(event) => onCategoryChange(event.target.value)}
           sx={{ minWidth: 190 }}
         >
           <MenuItem value="">All categories</MenuItem>
@@ -316,7 +331,7 @@ export function DevicesTab({
           exclusive
           size="small"
           value={status}
-          onChange={(_event, value) => value && setStatus(value)}
+          onChange={(_event, value) => value && onStatusChange(value)}
         >
           <ToggleButton value="all">All</ToggleButton>
           <ToggleButton value="online">Online</ToggleButton>
@@ -324,13 +339,24 @@ export function DevicesTab({
         </ToggleButtonGroup>
       </Stack>
 
+      {deviceIdFilter ? (
+        <Chip
+          size="small"
+          variant="outlined"
+          label={`Filtered from overview · ${deviceIdFilter.length} device${deviceIdFilter.length === 1 ? "" : "s"}`}
+          onDelete={onClearDeviceIdFilter}
+          deleteIcon={<CloseIcon fontSize="small" />}
+          sx={{ alignSelf: "flex-start" }}
+        />
+      ) : null}
+
       <Card sx={{ height: 620 }}>
         <DataGrid
           rows={rows}
           columns={columns}
           density="comfortable"
           disableRowSelectionOnClick
-          onRowClick={(params) => setSelectedId((params.row as DeviceRow).id)}
+          onRowClick={(params) => onSelectDevice((params.row as DeviceRow).id)}
           initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
           pageSizeOptions={[25, 50, 100]}
           sx={{
@@ -344,7 +370,7 @@ export function DevicesTab({
         />
       </Card>
 
-      <Dialog open={Boolean(selected)} onClose={() => setSelectedId(null)} maxWidth="sm" fullWidth>
+      <Dialog open={Boolean(selected)} onClose={() => onSelectDevice(null)} maxWidth="sm" fullWidth>
         {selected ? (
           <>
             <DialogTitle sx={{ pb: 1 }}>
@@ -571,7 +597,7 @@ export function DevicesTab({
               </Stack>
 
               <Stack direction="row" sx={{ justifyContent: "flex-end", mt: 2 }}>
-                <Button onClick={() => setSelectedId(null)}>Close</Button>
+                <Button onClick={() => onSelectDevice(null)}>Close</Button>
               </Stack>
             </DialogContent>
           </>

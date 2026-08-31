@@ -184,11 +184,11 @@ function buildState(): DemoState {
     },
     {
       id: "demo-history-3",
-      device_id: "demo-device-6",
-      scan_id: "demo-scan-2",
+      device_id: "demo-device-13",
+      scan_id: "demo-scan-1",
       event: "status_change",
       detail: "No longer responding",
-      created_at: iso(251),
+      created_at: iso(11),
     },
     {
       id: "demo-history-4",
@@ -197,6 +197,14 @@ function buildState(): DemoState {
       event: "hostname_changed",
       detail: "unknown -> nas.lan",
       created_at: iso(251),
+    },
+    {
+      id: "demo-history-5",
+      device_id: "demo-device-10",
+      scan_id: "demo-scan-1",
+      event: "first_seen",
+      detail: "Discovered at 192.168.1.10",
+      created_at: iso(11),
     },
   ];
 

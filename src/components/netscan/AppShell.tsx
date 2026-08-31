@@ -37,7 +37,7 @@ import { DashboardTab } from "./DashboardTab";
 import { DevicesTab } from "./DevicesTab";
 import { NetworksTab } from "./NetworksTab";
 import { ScansTab } from "./ScansTab";
-import { Mono } from "./shared";
+import { Mono, deriveScanDeltas } from "./shared";
 
 const TRANSPORT_COPY: Record<TransportMode, { label: string; hint: string }> = {
   desktop: {
@@ -70,6 +70,10 @@ export function AppShell() {
   });
   const [progress, setProgress] = useState<ScanProgress>({ running: false });
   const [networkFilter, setNetworkFilter] = useState("");
+  const [status, setStatus] = useState<"all" | "online" | "offline">("all");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [deviceIdFilter, setDeviceIdFilter] = useState<string[] | null>(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -161,6 +165,43 @@ export function AppShell() {
     () => (networkFilter ? devices.filter((d) => d.network_id === networkFilter) : devices),
     [devices, networkFilter],
   );
+
+  const latestScanId = dashboard?.recentScans[0]?.id ?? null;
+  const { newDeviceIds, missingDeviceIds } = useMemo(
+    () => deriveScanDeltas(history, latestScanId),
+    [history, latestScanId],
+  );
+
+  const onStatusChange = useCallback((value: "all" | "online" | "offline") => {
+    setStatus(value);
+    setDeviceIdFilter(null);
+  }, []);
+
+  const onCategoryChange = useCallback((value: string) => {
+    setCategoryFilter(value);
+    setDeviceIdFilter(null);
+  }, []);
+
+  const onClearDeviceIdFilter = useCallback(() => setDeviceIdFilter(null), []);
+
+  const onFilterDevices = useCallback(
+    (filter: {
+      status?: "all" | "online" | "offline";
+      category?: string | null;
+      deviceIds?: string[] | null;
+    }) => {
+      setStatus(filter.status ?? "all");
+      setCategoryFilter(filter.category ?? "");
+      setDeviceIdFilter(filter.deviceIds ?? null);
+      setTab(1);
+    },
+    [],
+  );
+
+  const onSelectDeviceFromDashboard = useCallback((id: string) => {
+    setSelectedDeviceId(id);
+    setTab(1);
+  }, []);
 
   const scanning = Boolean(progress.running);
   const copy = TRANSPORT_COPY[transport];
@@ -256,7 +297,14 @@ export function AppShell() {
           {loading ? <LinearProgress sx={{ mb: 2 }} /> : null}
 
           <Box sx={{ display: tab === 0 ? "block" : "none" }}>
-            <DashboardTab data={dashboard} />
+            <DashboardTab
+              data={dashboard}
+              devices={visibleDevices}
+              newDeviceIds={newDeviceIds}
+              missingDeviceIds={missingDeviceIds}
+              onFilterDevices={onFilterDevices}
+              onSelectDevice={onSelectDeviceFromDashboard}
+            />
           </Box>
           <Box sx={{ display: tab === 1 ? "block" : "none" }}>
             <DevicesTab
@@ -268,6 +316,14 @@ export function AppShell() {
               info={info}
               networkFilter={networkFilter}
               onNetworkFilter={setNetworkFilter}
+              status={status}
+              onStatusChange={onStatusChange}
+              categoryFilter={categoryFilter}
+              onCategoryChange={onCategoryChange}
+              deviceIdFilter={deviceIdFilter}
+              onClearDeviceIdFilter={onClearDeviceIdFilter}
+              selectedDeviceId={selectedDeviceId}
+              onSelectDevice={setSelectedDeviceId}
               onRefresh={refresh}
             />
           </Box>
