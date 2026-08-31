@@ -5,6 +5,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import EditIcon from "@mui/icons-material/Edit";
 import KeyIcon from "@mui/icons-material/Key";
 import LockIcon from "@mui/icons-material/Lock";
+import NetworkPingIcon from "@mui/icons-material/NetworkPing";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import SearchIcon from "@mui/icons-material/Search";
 import VisibilityIcon from "@mui/icons-material/Visibility";
@@ -42,6 +43,7 @@ import type {
 } from "@/lib/netscan-types";
 import { mono } from "@/theme";
 import { CredentialFormDialog } from "./CredentialFormDialog";
+import { PingDialog } from "./PingDialog";
 import {
   HISTORY_LABELS,
   Mono,
@@ -205,6 +207,11 @@ export function DevicesTab({
     : [];
 
   const { revealed, reveal, hide, clear } = useRevealedSecrets();
+  const [pingOpen, setPingOpen] = useState(false);
+  const closeDeviceDialog = () => {
+    setPingOpen(false);
+    onSelectDevice(null);
+  };
   const [credentialFormOpen, setCredentialFormOpen] = useState(false);
   const [editingCredential, setEditingCredential] = useState<CredentialRow | null>(null);
   const [deleteCredentialTarget, setDeleteCredentialTarget] = useState<CredentialRow | null>(null);
@@ -372,7 +379,7 @@ export function DevicesTab({
         />
       </Card>
 
-      <Dialog open={Boolean(selected)} onClose={() => onSelectDevice(null)} maxWidth="sm" fullWidth>
+      <Dialog open={Boolean(selected)} onClose={() => closeDeviceDialog()} maxWidth="sm" fullWidth>
         {selected ? (
           <>
             <DialogTitle sx={{ pb: 1 }}>
@@ -386,6 +393,15 @@ export function DevicesTab({
                 >
                   <ContentCopyIcon fontSize="inherit" />
                 </IconButton>
+                <Tooltip title="Ping this device">
+                  <IconButton
+                    size="small"
+                    onClick={() => setPingOpen(true)}
+                    aria-label="Ping device"
+                  >
+                    <NetworkPingIcon fontSize="inherit" />
+                  </IconButton>
+                </Tooltip>
               </Stack>
               <Typography variant="caption" color="text.secondary">
                 {selected.hostname || "no hostname resolved"}
@@ -599,12 +615,14 @@ export function DevicesTab({
               </Stack>
 
               <Stack direction="row" sx={{ justifyContent: "flex-end", mt: 2 }}>
-                <Button onClick={() => onSelectDevice(null)}>Close</Button>
+                <Button onClick={() => closeDeviceDialog()}>Close</Button>
               </Stack>
             </DialogContent>
           </>
         ) : null}
       </Dialog>
+
+      <PingDialog open={pingOpen} device={selected} onClose={() => setPingOpen(false)} />
 
       {selected ? (
         <CredentialFormDialog

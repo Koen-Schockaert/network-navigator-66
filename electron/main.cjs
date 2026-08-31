@@ -86,6 +86,8 @@ app.whenReady().then(() => {
   handle("getScanStatus", () => service.getScanStatus());
   handle("startScan", (networkId, options) => service.startScan(networkId, options));
   handle("stopScan", () => service.stopScan());
+  handle("startPing", (ip, options) => service.startPing(ip, options));
+  handle("stopPing", (sessionId) => service.stopPing(sessionId));
 
   handle("getDashboard", () => service.getDashboard());
   handle("listHistory", (deviceId) => service.listHistory(deviceId));

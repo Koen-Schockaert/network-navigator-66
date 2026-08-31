@@ -99,7 +99,25 @@ export type NetscanEvent = {
   device?: DeviceRow;
   credential?: CredentialRow;
   id?: string;
+  sessionId?: string;
+  ip?: string;
+  sequence?: number;
+  rttMs?: number | null;
+  timestamp?: string;
   [key: string]: unknown;
+};
+
+export type PingOptions = {
+  intervalMs?: number;
+  timeoutMs?: number;
+};
+
+export type PingResult = {
+  sessionId: string;
+  ip: string;
+  sequence: number;
+  rttMs: number | null;
+  timestamp: string;
 };
 
 export type TransportMode = "desktop" | "server" | "demo";

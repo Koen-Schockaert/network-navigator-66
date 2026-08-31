@@ -6,6 +6,7 @@
  * progress broadcasting.
  */
 
+const crypto = require("node:crypto");
 const { createDatabase } = require("./db.cjs");
 const vault = require("./vault.cjs");
 const {
@@ -14,6 +15,8 @@ const {
   countTargets,
   detectLocalNetworks,
   expandTargets,
+  isIpv4,
+  pingHost,
   scanNetwork,
 } = require("./scanner.cjs");
 
@@ -23,6 +26,9 @@ function createService(options = {}) {
 
   /** @type {{ scanId: string, networkId: string, signal: { aborted: boolean }, progress: object } | null} */
   let active = null;
+
+  /** @type {Map<string, { ip: string, sequence: number, aborted: boolean, timer: NodeJS.Timeout | null }>} */
+  const pingSessions = new Map();
 
   /** Derived vault key. Buffer while unlocked, null while locked. Never persisted. */
   let vaultKey = null;
@@ -243,6 +249,49 @@ function createService(options = {}) {
       return { running: true, stopping: true, scanId: active.scanId };
     },
 
+    /* -------------------------- ping ------------------------------- */
+    startPing(ip, pingOptions = {}) {
+      if (!ip || !isIpv4(ip)) throw new Error("A valid IPv4 address is required");
+      const intervalMs = Math.min(Math.max(Number(pingOptions.intervalMs) || 1000, 250), 60000);
+      const timeoutMs = Math.min(Math.max(Number(pingOptions.timeoutMs) || 1000, 200), 5000);
+      const sessionId = crypto.randomUUID();
+      const session = { ip, sequence: 0, aborted: false, timer: null };
+      pingSessions.set(sessionId, session);
+      broadcast({ type: "ping:started", sessionId, ip });
+
+      const tick = async () => {
+        if (session.aborted) return;
+        const startedAt = Date.now();
+        const rttMs = await pingHost(ip, timeoutMs);
+        if (session.aborted) return;
+        session.sequence += 1;
+        broadcast({
+          type: "ping:result",
+          sessionId,
+          ip,
+          sequence: session.sequence,
+          rttMs,
+          timestamp: new Date().toISOString(),
+        });
+        if (session.aborted) return;
+        const elapsed = Date.now() - startedAt;
+        session.timer = setTimeout(tick, Math.max(0, intervalMs - elapsed));
+      };
+      tick();
+
+      return { sessionId, ip };
+    },
+
+    stopPing(sessionId) {
+      const session = pingSessions.get(sessionId);
+      if (!session) return { stopped: false };
+      session.aborted = true;
+      if (session.timer) clearTimeout(session.timer);
+      pingSessions.delete(sessionId);
+      broadcast({ type: "ping:stopped", sessionId, ip: session.ip });
+      return { stopped: true };
+    },
+
     /* -------------------------- vault ------------------------------ */
     getVaultStatus() {
       return { configured: Boolean(db.getVaultMeta()), unlocked: vaultKey !== null };
@@ -444,6 +493,11 @@ function createService(options = {}) {
     },
 
     close() {
+      for (const session of pingSessions.values()) {
+        session.aborted = true;
+        if (session.timer) clearTimeout(session.timer);
+      }
+      pingSessions.clear();
       db.close();
     },
   };

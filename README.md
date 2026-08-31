@@ -14,6 +14,8 @@ can't open raw sockets, so no real scanning happens there).
   local subnet for you.
 - **Device inventory** — IP, hostname, MAC + vendor lookup, open ports, latency and online/offline status
   for every device seen.
+- **Live ping** — from a device's details, start a continuous ping and watch replies stream in in
+  real time, with running sent/received/loss and min/avg/max latency stats.
 - **Auto-categorization** — devices are guessed into categories (router, NAS, IoT, TV, laptop, ...) from
   vendor and hostname, editable per device.
 - **Scan history & change tracking** — every scan is stored, so you can compare runs and see a full

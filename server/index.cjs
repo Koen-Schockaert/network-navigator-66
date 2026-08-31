@@ -141,6 +141,10 @@ async function handleApi(req, res, url) {
       return sendJson(res, 202, await service.startScan(body.networkId, body.options || {}));
     case "POST /scan/stop":
       return sendJson(res, 200, service.stopScan());
+    case "POST /ping/start":
+      return sendJson(res, 202, service.startPing(body.ip, body.options || {}));
+    case "POST /ping/stop":
+      return sendJson(res, 200, service.stopPing(body.sessionId));
     case "POST /vault/setup":
       return sendJson(res, 201, service.setupVault(body.password));
     case "POST /vault/unlock":

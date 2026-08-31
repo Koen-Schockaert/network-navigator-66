@@ -10,6 +10,7 @@ import type {
   Info,
   NetscanEvent,
   NetworkRow,
+  PingOptions,
   ScanProgress,
   ScanRow,
   TransportMode,
@@ -39,6 +40,8 @@ type DesktopBridge = {
   getScanStatus(): Promise<ScanProgress>;
   startScan(networkId: string, options?: ScanOptions): Promise<{ scanId: string }>;
   stopScan(): Promise<unknown>;
+  startPing(ip: string, options?: PingOptions): Promise<{ sessionId: string; ip: string }>;
+  stopPing(sessionId: string): Promise<{ stopped: boolean }>;
   getDashboard(): Promise<Dashboard>;
   listHistory(deviceId?: string): Promise<HistoryRow[]>;
   exportData(): Promise<{ saved: boolean; filePath?: string }>;
@@ -133,6 +136,7 @@ async function send<T>(path: string, method: string, body: unknown): Promise<T> 
 const demoListeners = new Set<(event: NetscanEvent) => void>();
 let demoProgress: ScanProgress = { running: false };
 let demoCancel: (() => void) | null = null;
+const demoPingTimers = new Map<string, ReturnType<typeof setInterval>>();
 
 function emitDemo(event: NetscanEvent) {
   for (const listener of demoListeners) listener(event);
@@ -290,6 +294,46 @@ export const netscan = {
     demoProgress = { running: false };
     emitDemo({ type: "scan:finished" });
     return { running: false };
+  },
+
+  async startPing(ip: string, options: PingOptions = {}) {
+    const desktop = bridge();
+    if (desktop) return desktop.startPing(ip, options);
+    if (await hasServer()) {
+      return send<{ sessionId: string; ip: string }>("/ping/start", "POST", { ip, options });
+    }
+
+    const sessionId = `demo-ping-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const intervalMs = Math.min(Math.max(options.intervalMs ?? 1000, 250), 60000);
+    let sequence = 0;
+    emitDemo({ type: "ping:started", sessionId, ip });
+    const timer = setInterval(() => {
+      sequence += 1;
+      const timedOut = Math.random() < 0.08;
+      emitDemo({
+        type: "ping:result",
+        sessionId,
+        ip,
+        sequence,
+        rttMs: timedOut ? null : Math.round(2 + Math.random() * 40),
+        timestamp: new Date().toISOString(),
+      });
+    }, intervalMs);
+    demoPingTimers.set(sessionId, timer);
+    return { sessionId, ip };
+  },
+
+  async stopPing(sessionId: string) {
+    const desktop = bridge();
+    if (desktop) return desktop.stopPing(sessionId);
+    if (await hasServer()) return send<{ stopped: boolean }>("/ping/stop", "POST", { sessionId });
+
+    const timer = demoPingTimers.get(sessionId);
+    if (!timer) return { stopped: false };
+    clearInterval(timer);
+    demoPingTimers.delete(sessionId);
+    emitDemo({ type: "ping:stopped", sessionId });
+    return { stopped: true };
   },
 
   async exportData(): Promise<{ saved: boolean; filePath?: string }> {

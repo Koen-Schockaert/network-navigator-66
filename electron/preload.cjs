@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld("netscan", {
   getScanStatus: () => call("getScanStatus"),
   startScan: (networkId, options) => call("startScan", networkId, options),
   stopScan: () => call("stopScan"),
+  startPing: (ip, options) => call("startPing", ip, options),
+  stopPing: (sessionId) => call("stopPing", sessionId),
 
   getDashboard: () => call("getDashboard"),
   listHistory: (deviceId) => call("listHistory", deviceId),
