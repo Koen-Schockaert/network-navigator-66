@@ -50,6 +50,111 @@ const PORT_LABELS = {
   9100: "Printer (RAW)",
 };
 
+const DEEP_PORT_LABELS = {
+  20: "FTP-data",
+  69: "TFTP",
+  88: "Kerberos",
+  111: "RPC",
+  123: "NTP",
+  135: "MS-RPC",
+  137: "NetBIOS-NS",
+  138: "NetBIOS-DGM",
+  139: "NetBIOS-SSN",
+  179: "BGP",
+  389: "LDAP",
+  465: "SMTPS",
+  500: "IKE/VPN",
+  514: "Syslog",
+  587: "SMTP-submission",
+  636: "LDAPS",
+  873: "rsync",
+  902: "VMware",
+  1194: "OpenVPN",
+  1433: "MSSQL",
+  1521: "Oracle DB",
+  1723: "PPTP",
+  2049: "NFS",
+  2181: "ZooKeeper",
+  2222: "SSH-alt",
+  2375: "Docker",
+  2379: "etcd",
+  3128: "Squid proxy",
+  3260: "iSCSI",
+  3690: "SVN",
+  4369: "EPMD (Erlang)",
+  5222: "XMPP",
+  5353: "mDNS",
+  5601: "Kibana",
+  5672: "AMQP",
+  5984: "CouchDB",
+  5985: "WinRM",
+  5986: "WinRM-HTTPS",
+  6379: "Redis",
+  6443: "Kubernetes API",
+  6667: "IRC",
+  7474: "Neo4j",
+  7547: "TR-069",
+  8086: "InfluxDB",
+  8123: "Home Assistant",
+  8291: "MikroTik",
+  8333: "Bitcoin",
+  8384: "Syncthing",
+  8554: "RTSP",
+  8888: "HTTP-alt",
+  9000: "HTTP-alt",
+  9042: "Cassandra",
+  9090: "Prometheus",
+  9200: "Elasticsearch",
+  9300: "Elasticsearch-transport",
+  10000: "Webmin",
+  10250: "Kubelet",
+  11211: "Memcached",
+  15672: "RabbitMQ mgmt",
+  25565: "Minecraft",
+  27017: "MongoDB",
+  32400: "Plex",
+  47808: "BACnet",
+};
+
+// Merged in place so PORT_LABELS stays the single map the rest of the module
+// (and getInfo()'s frontend payload) already reads from.
+Object.assign(PORT_LABELS, DEEP_PORT_LABELS);
+
+/**
+ * Extra ports probed by the "deep" profile only - less universally common
+ * than DEFAULT_PORTS, but frequent enough on home/office LANs to be worth
+ * the extra probe time (dev servers, databases, remote admin, media, IoT).
+ */
+const DEEP_EXTRA_PORTS = [
+  20, 69, 88, 111, 123, 135, 137, 138, 139, 179, 389, 427, 465, 500, 512, 513, 514, 587, 636, 646,
+  873, 902, 989, 990, 1025, 1194, 1433, 1521, 1701, 1723, 2000, 2049, 2181, 2222, 2375, 2379, 2483,
+  2484, 3128, 3260, 3268, 3690, 4000, 4369, 4500, 5001, 5222, 5353, 5355, 5601, 5671, 5672, 5984,
+  5985, 5986, 6000, 6379, 6443, 6667, 7000, 7001, 7070, 7474, 7547, 8000, 8008, 8081, 8086, 8087,
+  8089, 8123, 8181, 8200, 8291, 8333, 8384, 8388, 8554, 8888, 8889, 8899, 9000, 9001, 9042, 9090,
+  9091, 9200, 9300, 9999, 10000, 10250, 11211, 15672, 20000, 25565, 27017, 32400, 32469, 47808,
+  49152,
+];
+
+const DEEP_PORTS = Array.from(new Set([...DEFAULT_PORTS, ...DEEP_EXTRA_PORTS])).sort((a, b) => a - b);
+
+/**
+ * Named presets so callers (UI, API, IPC) can request a tradeoff by name
+ * instead of assembling raw scanNetwork() options. "standard" is deliberately
+ * `{}` so it's defined by - and can never drift from - scanNetwork()'s own
+ * defaults.
+ */
+const SCAN_PROFILES = {
+  quick: { scanPorts: false, timeout: 600 },
+  standard: {},
+  deep: { ports: DEEP_PORTS },
+};
+const DEFAULT_SCAN_PROFILE = "standard";
+
+/** Resolve a named profile (falling back to the default) into scanNetwork() option overrides. */
+function resolveScanProfile(profile) {
+  return SCAN_PROFILES[profile] || SCAN_PROFILES[DEFAULT_SCAN_PROFILE];
+}
+
 /* ------------------------------------------------------------------ */
 /* IP helpers                                                          */
 /* ------------------------------------------------------------------ */
@@ -642,8 +747,11 @@ async function scanNetwork(target, options = {}) {
 }
 
 module.exports = {
+  DEEP_PORTS,
   DEFAULT_PORTS,
+  DEFAULT_SCAN_PROFILE,
   PORT_LABELS,
+  SCAN_PROFILES,
   checkPort,
   countTargets,
   detectLocalNetworks,
@@ -654,5 +762,6 @@ module.exports = {
   pingHost,
   readArpTable,
   resolveHostname,
+  resolveScanProfile,
   scanNetwork,
 };

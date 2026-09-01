@@ -12,11 +12,13 @@ import Chip from "@mui/material/Chip";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { useEffect, useState } from "react";
 import { netscan } from "@/lib/netscan-api";
-import type { Info, NetworkRow } from "@/lib/netscan-types";
+import type { Info, NetworkRow, ScanProfile } from "@/lib/netscan-types";
 import { statusColors } from "@/theme";
 import { Mono, relativeTime } from "./shared";
 
@@ -25,8 +27,22 @@ type Props = {
   info: Info | null;
   scanning: boolean;
   onRefresh: () => void;
-  onScan: (networkId: string) => void;
+  onScan: (networkId: string, profile: ScanProfile) => void;
 };
+
+const PROFILE_STORAGE_KEY = "netscan_scan_profile";
+
+const PROFILE_DETAILS: Record<ScanProfile, { label: string; description: string }> = {
+  quick: { label: "Quick", description: "Ping sweep only — no port scan. Fastest." },
+  standard: { label: "Standard", description: "Ping plus the default ~30-port list." },
+  deep: { label: "Deep", description: "Ping plus an extended ~130-port list. Slowest." },
+};
+
+function readStoredProfile(fallback: ScanProfile): ScanProfile {
+  if (typeof window === "undefined") return fallback;
+  const stored = window.localStorage.getItem(PROFILE_STORAGE_KEY);
+  return stored === "quick" || stored === "standard" || stored === "deep" ? stored : fallback;
+}
 
 export function NetworksTab({ networks, info, scanning, onRefresh, onScan }: Props) {
   const [cidr, setCidr] = useState("");
@@ -34,6 +50,15 @@ export function NetworksTab({ networks, info, scanning, onRefresh, onScan }: Pro
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [profile, setProfile] = useState<ScanProfile>(() =>
+    readStoredProfile(info?.defaultScanProfile ?? "standard"),
+  );
+
+  function changeProfile(value: ScanProfile | null) {
+    if (!value) return;
+    setProfile(value);
+    window.localStorage.setItem(PROFILE_STORAGE_KEY, value);
+  }
 
   useEffect(() => {
     const target = cidr.trim();
@@ -185,6 +210,30 @@ export function NetworksTab({ networks, info, scanning, onRefresh, onScan }: Pro
         </CardContent>
       </Card>
 
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1.5}
+        sx={{ alignItems: { sm: "center" }, justifyContent: "space-between" }}
+      >
+        <Typography variant="subtitle2" color="text.secondary">
+          Scan profile
+        </Typography>
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={profile}
+          onChange={(_event, value: ScanProfile | null) => changeProfile(value)}
+        >
+          {(Object.keys(PROFILE_DETAILS) as ScanProfile[]).map((key) => (
+            <ToggleButton key={key} value={key}>
+              <Tooltip title={PROFILE_DETAILS[key].description}>
+                <span>{PROFILE_DETAILS[key].label}</span>
+              </Tooltip>
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+      </Stack>
+
       <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: "wrap" }}>
         {networks.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
@@ -240,7 +289,7 @@ export function NetworksTab({ networks, info, scanning, onRefresh, onScan }: Pro
                   startIcon={<PlayArrowIcon />}
                   sx={{ mt: 1.5 }}
                   disabled={scanning}
-                  onClick={() => onScan(network.id)}
+                  onClick={() => onScan(network.id, profile)}
                 >
                   {scanning ? "Scan running" : "Scan now"}
                 </Button>

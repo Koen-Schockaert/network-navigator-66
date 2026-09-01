@@ -11,12 +11,15 @@ const { createDatabase } = require("./db.cjs");
 const vault = require("./vault.cjs");
 const {
   DEFAULT_PORTS,
+  DEFAULT_SCAN_PROFILE,
   PORT_LABELS,
+  SCAN_PROFILES,
   countTargets,
   detectLocalNetworks,
   expandTargets,
   isIpv4,
   pingHost,
+  resolveScanProfile,
   scanNetwork,
 } = require("./scanner.cjs");
 
@@ -71,6 +74,8 @@ function createService(options = {}) {
         platform: process.platform,
         defaultPorts: DEFAULT_PORTS,
         portLabels: PORT_LABELS,
+        scanProfiles: Object.keys(SCAN_PROFILES),
+        defaultScanProfile: DEFAULT_SCAN_PROFILE,
         interfaces: detectLocalNetworks(),
       };
     },
@@ -192,6 +197,11 @@ function createService(options = {}) {
       const network = db.getNetwork(networkId);
       if (!network) throw new Error("Network not found");
 
+      // A named profile (quick/standard/deep) fills in sane defaults; any
+      // option the caller sets explicitly alongside it still wins.
+      const { profile, ...explicitOptions } = scanOptions;
+      const resolvedOptions = { ...resolveScanProfile(profile), ...explicitOptions };
+
       const run = db.startScan(networkId);
       const signal = { aborted: false };
       active = {
@@ -205,7 +215,7 @@ function createService(options = {}) {
       (async () => {
         try {
           const result = await scanNetwork(network.cidr, {
-            ...scanOptions,
+            ...resolvedOptions,
             signal,
             onProgress: (progress) => {
               if (active) active.progress = progress;

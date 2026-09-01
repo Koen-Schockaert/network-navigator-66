@@ -82,12 +82,16 @@ export type LocalInterface = {
   hostCount: number;
 };
 
+export type ScanProfile = "quick" | "standard" | "deep";
+
 export type Info = {
   backend: string;
   dbFile: string;
   platform: string;
   defaultPorts: number[];
   portLabels: Record<string, string>;
+  scanProfiles: ScanProfile[];
+  defaultScanProfile: ScanProfile;
   interfaces: LocalInterface[];
 };
 

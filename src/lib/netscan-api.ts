@@ -11,6 +11,7 @@ import type {
   NetscanEvent,
   NetworkRow,
   PingOptions,
+  ScanProfile,
   ScanProgress,
   ScanRow,
   TransportMode,
@@ -68,6 +69,7 @@ export type TargetPreview = {
   last: string[];
 };
 export type ScanOptions = {
+  profile?: ScanProfile;
   scanPorts?: boolean;
   resolveHostnames?: boolean;
   timeout?: number;

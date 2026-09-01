@@ -58,7 +58,11 @@ Because of this split, there are **two Vite configs**:
 ## `core/` engine
 
 - `core/scanner.cjs` — ping/ARP/TCP port scanning, target expansion (CIDR/range/list parsing), local
-  interface detection.
+  interface detection. Also defines `SCAN_PROFILES` (`quick`/`standard`/`deep`, resolved by
+  `resolveScanProfile()`) — named presets over `scanNetwork()`'s own options, so a caller passes
+  `{ profile: "deep" }` instead of assembling `{ scanPorts, ports, timeout }` by hand. `standard` is
+  deliberately `{}`: it inherits `scanNetwork()`'s defaults rather than restating them, so the two can
+  never drift apart.
 - `core/db.cjs` — storage layer with two interchangeable backends behind one repository API:
   `node:sqlite` when available, otherwise an atomic JSON-file store. Callers never need to know which
   is active. Tables: `networks`, `scan_runs`, `devices`, `scan_results`, `device_history`.

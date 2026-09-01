@@ -26,6 +26,7 @@ import type {
   HistoryRow,
   Info,
   NetworkRow,
+  ScanProfile,
   ScanProgress,
   ScanRow,
   TransportMode,
@@ -152,10 +153,10 @@ export function AppShell() {
     });
   }, [refresh]);
 
-  const startScan = useCallback(async (networkId: string) => {
+  const startScan = useCallback(async (networkId: string, profile: ScanProfile) => {
     setProgress({ running: true, percent: 0, networkId });
     try {
-      await netscan.startScan(networkId, { scanPorts: true, resolveHostnames: true });
+      await netscan.startScan(networkId, { profile, resolveHostnames: true });
     } catch {
       setProgress({ running: false });
     }

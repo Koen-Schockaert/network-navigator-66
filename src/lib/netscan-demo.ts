@@ -289,6 +289,8 @@ export const demoInfo: Info = {
     "8443": "HTTPS-alt",
     "9100": "Printer (RAW)",
   },
+  scanProfiles: ["quick", "standard", "deep"],
+  defaultScanProfile: "standard",
   interfaces: [
     {
       interface: "eth0",
