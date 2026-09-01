@@ -413,6 +413,32 @@ export const demoBackend = {
     return getState().history.filter((h) => !deviceId || h.device_id === deviceId);
   },
 
+  exportNetwork(networkId: string) {
+    const { networks, devices, scans, history } = getState();
+    const network = networks.find((n) => n.id === networkId);
+    const ownDevices = devices.filter((d) => d.network_id === networkId);
+    const deviceIds = new Set(ownDevices.map((d) => d.id));
+    return {
+      exportedAt: new Date().toISOString(),
+      network,
+      devices: ownDevices,
+      scans: scans.filter((s) => s.network_id === networkId),
+      history: history.filter((h) => deviceIds.has(h.device_id)),
+    };
+  },
+
+  exportScan(scanId: string) {
+    const { networks, devices, scans, history } = getState();
+    const scan = scans.find((s) => s.id === scanId);
+    return {
+      exportedAt: new Date().toISOString(),
+      scan,
+      network: scan ? networks.find((n) => n.id === scan.network_id) : null,
+      devices: scan ? devices.filter((d) => d.network_id === scan.network_id) : [],
+      history: history.filter((h) => h.scan_id === scanId),
+    };
+  },
+
   getDashboard(): Dashboard {
     const { devices, scans, history } = getState();
     const vendorCounts = new Map<string, number>();

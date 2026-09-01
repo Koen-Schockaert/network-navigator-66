@@ -673,6 +673,43 @@ function createDatabase(options = {}) {
       };
     },
 
+    /** Everything for one network: its devices, its scans, and only the results/history rows that belong to those. */
+    exportNetwork(networkId) {
+      const network = api.getNetwork(networkId);
+      if (!network) return null;
+      const devices = backend.all("devices").filter((d) => d.network_id === networkId);
+      const deviceIds = new Set(devices.map((d) => d.id));
+      const scans = backend
+        .all("scan_runs")
+        .filter((s) => s.network_id === networkId)
+        .sort((a, b) => String(b.started_at).localeCompare(String(a.started_at)));
+      const scanIds = new Set(scans.map((s) => s.id));
+      return {
+        exportedAt: nowIso(),
+        network,
+        devices,
+        scans,
+        results: backend.all("scan_results").filter((r) => scanIds.has(r.scan_id)),
+        history: backend.all("device_history").filter((h) => deviceIds.has(h.device_id)),
+      };
+    },
+
+    /** One scan run: its own results plus just the devices and history entries those results touch. */
+    exportScan(scanId) {
+      const scan = api.getScan(scanId);
+      if (!scan) return null;
+      const results = backend.all("scan_results").filter((r) => r.scan_id === scanId);
+      const deviceIds = new Set(results.map((r) => r.device_id));
+      return {
+        exportedAt: nowIso(),
+        scan,
+        network: api.getNetwork(scan.network_id),
+        devices: backend.all("devices").filter((d) => deviceIds.has(d.id)),
+        results,
+        history: backend.all("device_history").filter((h) => h.scan_id === scanId),
+      };
+    },
+
     close() {
       backend.close();
     },

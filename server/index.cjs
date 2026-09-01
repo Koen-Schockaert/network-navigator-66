@@ -140,6 +140,10 @@ async function handleApi(req, res, url) {
         return sendJson(res, 200, service.previewTargets(q.get("target") || ""));
       case "/export":
         return sendJson(res, 200, service.exportAll());
+      case "/export/network":
+        return sendJson(res, 200, service.exportNetwork(q.get("id")));
+      case "/export/scan":
+        return sendJson(res, 200, service.exportScan(q.get("id")));
       case "/vault/status":
         return sendJson(res, 200, service.getVaultStatus());
       case "/credentials":

@@ -54,6 +54,8 @@ type DesktopBridge = {
   getDashboard(): Promise<Dashboard>;
   listHistory(deviceId?: string): Promise<HistoryRow[]>;
   exportData(): Promise<{ saved: boolean; filePath?: string }>;
+  exportNetwork(networkId: string): Promise<{ saved: boolean; filePath?: string }>;
+  exportScan(scanId: string): Promise<{ saved: boolean; filePath?: string }>;
   importTargetsFile(): Promise<{ content: string | null }>;
   getVaultStatus(): Promise<VaultStatus>;
   setupVault(password: string): Promise<VaultStatus>;
@@ -172,6 +174,25 @@ async function send<T>(path: string, method: string, body: unknown): Promise<T> 
     throw new Error((payload as { error?: string }).error || "Request failed");
   }
   return payload as T;
+}
+
+function dateStamp(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function slugify(value: string): string {
+  return value.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "network";
+}
+
+/** Browser-only save path: build a JSON file in memory and click through an anchor. */
+function downloadJson(payload: unknown, filename: string): void {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 /* ------------------------------------------------------------------ */
@@ -434,15 +455,31 @@ export const netscan = {
           history: demoBackend.listHistory(),
         };
 
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `netscan-export-${new Date().toISOString().slice(0, 10)}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadJson(payload, `netscan-export-${dateStamp()}.json`);
+    return { saved: true };
+  },
+
+  async exportNetwork(networkId: string): Promise<{ saved: boolean; filePath?: string }> {
+    const desktop = bridge();
+    if (desktop) return desktop.exportNetwork(networkId);
+
+    const payload = (await hasServer())
+      ? await get<{ network: NetworkRow }>(`/export/network?id=${networkId}`)
+      : demoBackend.exportNetwork(networkId);
+
+    downloadJson(payload, `netscan-${slugify(payload.network?.name || networkId)}-${dateStamp()}.json`);
+    return { saved: true };
+  },
+
+  async exportScan(scanId: string): Promise<{ saved: boolean; filePath?: string }> {
+    const desktop = bridge();
+    if (desktop) return desktop.exportScan(scanId);
+
+    const payload = (await hasServer())
+      ? await get<unknown>(`/export/scan?id=${scanId}`)
+      : demoBackend.exportScan(scanId);
+
+    downloadJson(payload, `netscan-scan-${dateStamp()}.json`);
     return { saved: true };
   },
 

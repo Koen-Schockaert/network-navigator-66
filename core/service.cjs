@@ -276,6 +276,16 @@ function createService(options = {}) {
     exportAll() {
       return db.exportAll();
     },
+    exportNetwork(networkId) {
+      const data = db.exportNetwork(networkId);
+      if (!data) throw new Error("Network not found");
+      return data;
+    },
+    exportScan(scanId) {
+      const data = db.exportScan(scanId);
+      if (!data) throw new Error("Scan not found");
+      return data;
+    },
 
     /* ----------------------- dashboard ---------------------- */
     getDashboard() {

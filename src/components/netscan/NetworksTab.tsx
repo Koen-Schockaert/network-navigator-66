@@ -1,5 +1,6 @@
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
+import DownloadIcon from "@mui/icons-material/Download";
 import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import RadarIcon from "@mui/icons-material/Radar";
@@ -376,6 +377,14 @@ export function NetworksTab({ networks, info, scanning, onRefresh, onScan }: Pro
     onRefresh();
   }
 
+  async function exportNetwork(id: string) {
+    try {
+      await netscan.exportNetwork(id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not export that network");
+    }
+  }
+
   return (
     <Stack spacing={2.5}>
       <Card>
@@ -498,11 +507,18 @@ export function NetworksTab({ networks, info, scanning, onRefresh, onScan }: Pro
                     </Typography>
                     <Mono>{network.cidr}</Mono>
                   </Box>
-                  <Tooltip title="Remove range">
-                    <IconButton size="small" onClick={() => remove(network.id)}>
-                      <DeleteOutlineIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
+                  <Stack direction="row" spacing={0.5}>
+                    <Tooltip title="Export this network's data">
+                      <IconButton size="small" onClick={() => exportNetwork(network.id)}>
+                        <DownloadIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Remove range">
+                      <IconButton size="small" onClick={() => remove(network.id)}>
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
                 </Stack>
 
                 <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>

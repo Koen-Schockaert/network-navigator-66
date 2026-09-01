@@ -1,16 +1,21 @@
+import DownloadIcon from "@mui/icons-material/Download";
+import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
+import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { netscan } from "@/lib/netscan-api";
 import type { DeviceRow, HistoryRow, NetworkRow, ScanRow } from "@/lib/netscan-types";
 import { statusColors } from "@/theme";
 import { HISTORY_LABELS, Mono, historyColor, relativeTime } from "./shared";
@@ -33,6 +38,15 @@ function duration(scan: ScanRow) {
 export function ScansTab({ scans, networks, history, devices, onSelectDevice }: Props) {
   const nameFor = (id: string) => networks.find((n) => n.id === id)?.name ?? id;
   const deviceById = useMemo(() => new Map(devices.map((d) => [d.id, d])), [devices]);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  async function exportScan(id: string) {
+    try {
+      await netscan.exportScan(id);
+    } catch (cause) {
+      setExportError(cause instanceof Error ? cause.message : "Could not export that scan");
+    }
+  }
 
   return (
     <Stack direction={{ xs: "column", lg: "row" }} spacing={2.5}>
@@ -53,12 +67,13 @@ export function ScansTab({ scans, networks, history, devices, onSelectDevice }: 
                 <TableCell align="right">Gone</TableCell>
                 <TableCell align="right">Duration</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell align="right">Export</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {scans.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8}>
+                  <TableCell colSpan={9}>
                     <Typography variant="body2" color="text.secondary">
                       No scans recorded yet.
                     </Typography>
@@ -97,11 +112,23 @@ export function ScansTab({ scans, networks, history, devices, onSelectDevice }: 
                         }}
                       />
                     </TableCell>
+                    <TableCell align="right">
+                      <Tooltip title="Export this scan's data">
+                        <IconButton size="small" onClick={() => exportScan(scan.id)}>
+                          <DownloadIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
             </TableBody>
           </Table>
+          {exportError ? (
+            <Alert severity="warning" sx={{ mt: 1.5 }} onClose={() => setExportError(null)}>
+              {exportError}
+            </Alert>
+          ) : null}
         </CardContent>
       </Card>
 

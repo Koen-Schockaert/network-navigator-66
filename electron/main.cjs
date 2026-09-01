@@ -111,16 +111,47 @@ app.whenReady().then(() => {
   handle("updateCredential", (id, patch) => service.updateCredential(id, patch));
   handle("deleteCredential", (id) => service.deleteCredential(id));
 
-  handle("exportData", async () => {
-    const payload = service.exportAll();
+  const saveJsonExport = async (title, defaultPath, payload) => {
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
-      title: "Export scan data",
-      defaultPath: `netscan-export-${new Date().toISOString().slice(0, 10)}.json`,
+      title,
+      defaultPath,
       filters: [{ name: "JSON", extensions: ["json"] }],
     });
     if (canceled || !filePath) return { saved: false };
     fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
     return { saved: true, filePath };
+  };
+  const dateStamp = () => new Date().toISOString().slice(0, 10);
+  const slugify = (value) =>
+    String(value || "")
+      .replace(/[^a-z0-9]+/gi, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase() || "network";
+
+  handle("exportData", () =>
+    saveJsonExport(
+      "Export scan data",
+      `netscan-export-${dateStamp()}.json`,
+      service.exportAll(),
+    ),
+  );
+
+  handle("exportNetwork", (networkId) => {
+    const payload = service.exportNetwork(networkId);
+    return saveJsonExport(
+      "Export network data",
+      `netscan-${slugify(payload.network.name)}-${dateStamp()}.json`,
+      payload,
+    );
+  });
+
+  handle("exportScan", (scanId) => {
+    const payload = service.exportScan(scanId);
+    return saveJsonExport(
+      "Export scan data",
+      `netscan-scan-${dateStamp()}.json`,
+      payload,
+    );
   });
 
   handle("importTargetsFile", async () => {

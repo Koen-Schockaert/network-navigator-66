@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld("netscan", {
   getDashboard: () => call("getDashboard"),
   listHistory: (deviceId) => call("listHistory", deviceId),
   exportData: () => call("exportData"),
+  exportNetwork: (networkId) => call("exportNetwork", networkId),
+  exportScan: (scanId) => call("exportScan", scanId),
   importTargetsFile: () => call("importTargetsFile"),
 
   getVaultStatus: () => call("getVaultStatus"),
