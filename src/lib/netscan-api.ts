@@ -17,6 +17,8 @@ import type {
   ScanRow,
   TransportMode,
   VaultStatus,
+  WebhookConfig,
+  WebhookConfigPatch,
 } from "./netscan-types";
 
 /**
@@ -33,6 +35,9 @@ type DesktopBridge = {
   previewTargets(target: string): Promise<TargetPreview>;
   getOuiStatus(): Promise<OuiStatus>;
   refreshOuiDatabase(): Promise<OuiStatus>;
+  getWebhookConfig(): Promise<WebhookConfig>;
+  updateWebhookConfig(patch: WebhookConfigPatch): Promise<WebhookConfig>;
+  testWebhook(): Promise<{ ok: boolean }>;
   listNetworks(): Promise<NetworkRow[]>;
   createNetwork(input: NetworkInput): Promise<NetworkRow>;
   updateNetwork(id: string, patch: Partial<NetworkRow>): Promise<NetworkRow>;
@@ -214,6 +219,29 @@ export const netscan = {
     if (await hasServer()) return send<OuiStatus>("/oui/refresh", "POST", {});
     throw new Error(
       "Vendor database refresh needs the desktop app or container — demo mode has no network access.",
+    );
+  },
+
+  async getWebhookConfig(): Promise<WebhookConfig> {
+    const desktop = bridge();
+    if (desktop) return desktop.getWebhookConfig();
+    if (await hasServer()) return get<WebhookConfig>("/webhook");
+    return demoBackend.getWebhookConfig();
+  },
+
+  async updateWebhookConfig(patch: WebhookConfigPatch): Promise<WebhookConfig> {
+    const desktop = bridge();
+    if (desktop) return desktop.updateWebhookConfig(patch);
+    if (await hasServer()) return send<WebhookConfig>("/webhook", "PATCH", patch);
+    return demoBackend.updateWebhookConfig(patch);
+  },
+
+  async testWebhook(): Promise<{ ok: boolean }> {
+    const desktop = bridge();
+    if (desktop) return desktop.testWebhook();
+    if (await hasServer()) return send<{ ok: boolean }>("/webhook/test", "POST", {});
+    throw new Error(
+      "Webhook delivery needs the desktop app or container — demo mode has no network access.",
     );
   },
 

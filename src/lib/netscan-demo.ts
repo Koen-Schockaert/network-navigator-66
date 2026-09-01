@@ -11,6 +11,8 @@ import type {
   OuiStatus,
   ScanRow,
   VaultStatus,
+  WebhookConfig,
+  WebhookConfigPatch,
 } from "./netscan-types";
 
 /**
@@ -266,6 +268,13 @@ const demoSecrets = new Map<string, CredentialSecret>();
 let demoVaultPassword: string | null = null;
 let demoVaultUnlocked = false;
 
+let demoWebhookConfig: WebhookConfig = {
+  url: "",
+  enabled: false,
+  events: ["first_seen", "status_change", "ports_changed"],
+  updatedAt: null,
+};
+
 function getState(): DemoState {
   if (!state) state = buildState();
   return state;
@@ -292,6 +301,14 @@ export const demoInfo: Info = {
   },
   scanProfiles: ["quick", "standard", "deep"],
   defaultScanProfile: "standard",
+  webhookEvents: [
+    "first_seen",
+    "status_change",
+    "ip_changed",
+    "hostname_changed",
+    "vendor_changed",
+    "ports_changed",
+  ],
   interfaces: [
     {
       interface: "eth0",
@@ -307,6 +324,24 @@ export const demoInfo: Info = {
 export const demoBackend = {
   getOuiStatus(): OuiStatus {
     return { builtinEntries: 181, downloadedEntries: 0, updatedAt: null, source: null };
+  },
+
+  getWebhookConfig(): WebhookConfig {
+    return demoWebhookConfig;
+  },
+
+  updateWebhookConfig(patch: WebhookConfigPatch): WebhookConfig {
+    const next = { ...demoWebhookConfig, ...patch };
+    if (next.url) {
+      try {
+        new URL(next.url);
+      } catch {
+        throw new Error("That doesn't look like a valid URL");
+      }
+    }
+    if (!next.events.length) throw new Error("Select at least one event type");
+    demoWebhookConfig = { ...next, updatedAt: new Date().toISOString() };
+    return demoWebhookConfig;
   },
 
   listNetworks(): NetworkRow[] {

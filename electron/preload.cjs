@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld("netscan", {
   previewTargets: (target) => call("previewTargets", target),
   getOuiStatus: () => call("getOuiStatus"),
   refreshOuiDatabase: () => call("refreshOuiDatabase"),
+  getWebhookConfig: () => call("getWebhookConfig"),
+  updateWebhookConfig: (patch) => call("updateWebhookConfig", patch),
+  testWebhook: () => call("testWebhook"),
 
   listNetworks: () => call("listNetworks"),
   createNetwork: (input) => call("createNetwork", input),

@@ -84,6 +84,14 @@ export type LocalInterface = {
 
 export type ScanProfile = "quick" | "standard" | "deep";
 
+export type WebhookEvent =
+  | "first_seen"
+  | "status_change"
+  | "ip_changed"
+  | "hostname_changed"
+  | "vendor_changed"
+  | "ports_changed";
+
 export type Info = {
   backend: string;
   dbFile: string;
@@ -92,6 +100,7 @@ export type Info = {
   portLabels: Record<string, string>;
   scanProfiles: ScanProfile[];
   defaultScanProfile: ScanProfile;
+  webhookEvents: WebhookEvent[];
   interfaces: LocalInterface[];
 };
 
@@ -186,3 +195,12 @@ export type OuiStatus = {
   updatedAt: string | null;
   source: string | null;
 };
+
+export type WebhookConfig = {
+  url: string;
+  enabled: boolean;
+  events: WebhookEvent[];
+  updatedAt: string | null;
+};
+
+export type WebhookConfigPatch = Partial<Omit<WebhookConfig, "updatedAt">>;

@@ -134,6 +134,8 @@ async function handleApi(req, res, url) {
         return sendJson(res, 200, service.detectNetworks());
       case "/oui/status":
         return sendJson(res, 200, service.getOuiStatus());
+      case "/webhook":
+        return sendJson(res, 200, service.getWebhookConfig());
       case "/preview":
         return sendJson(res, 200, service.previewTargets(q.get("target") || ""));
       case "/export":
@@ -162,6 +164,10 @@ async function handleApi(req, res, url) {
       return sendJson(res, 200, service.updateDevice(body.id, body.patch || {}));
     case "POST /oui/refresh":
       return sendJson(res, 200, await service.refreshOuiDatabase());
+    case "PATCH /webhook":
+      return sendJson(res, 200, service.updateWebhookConfig(body));
+    case "POST /webhook/test":
+      return sendJson(res, 200, await service.testWebhook());
     case "POST /scan/start":
       return sendJson(res, 202, await service.startScan(body.networkId, body.options || {}));
     case "POST /scan/stop":

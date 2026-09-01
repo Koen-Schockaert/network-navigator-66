@@ -73,6 +73,9 @@ app.whenReady().then(() => {
   handle("previewTargets", (target) => service.previewTargets(target));
   handle("getOuiStatus", () => service.getOuiStatus());
   handle("refreshOuiDatabase", () => service.refreshOuiDatabase());
+  handle("getWebhookConfig", () => service.getWebhookConfig());
+  handle("updateWebhookConfig", (patch) => service.updateWebhookConfig(patch));
+  handle("testWebhook", () => service.testWebhook());
 
   handle("listNetworks", () => service.listNetworks());
   handle("createNetwork", (input) => service.createNetwork(input));

@@ -39,6 +39,7 @@ function createJsonBackend(file) {
     device_history: [],
     vault_meta: [],
     credentials: [],
+    webhook_config: [],
   };
 
   let state = { ...empty };
@@ -158,6 +159,7 @@ const TABLE_COLUMNS = {
     "created_at",
     "updated_at",
   ],
+  webhook_config: ["id", "url", "enabled", "events", "created_at", "updated_at"],
 };
 
 function createSqliteBackend(file) {
@@ -208,6 +210,10 @@ function createSqliteBackend(file) {
         secret_ciphertext TEXT, secret_iv TEXT, secret_tag TEXT,
         created_at TEXT, updated_at TEXT
       );
+      CREATE TABLE IF NOT EXISTS webhook_config (
+        id TEXT PRIMARY KEY, url TEXT, enabled INTEGER, events TEXT,
+        created_at TEXT, updated_at TEXT
+      );
       CREATE INDEX IF NOT EXISTS idx_devices_network ON devices(network_id);
       CREATE INDEX IF NOT EXISTS idx_results_scan ON scan_results(scan_id);
       CREATE INDEX IF NOT EXISTS idx_history_device ON device_history(device_id);
@@ -232,11 +238,19 @@ function createSqliteBackend(file) {
     if (!row) return row;
     const out = { ...row };
     if ("online" in out && out.online !== null) out.online = Boolean(out.online);
+    if ("enabled" in out && out.enabled !== null) out.enabled = Boolean(out.enabled);
     if ("open_ports" in out) {
       try {
         out.open_ports = out.open_ports ? JSON.parse(out.open_ports) : [];
       } catch {
         out.open_ports = [];
+      }
+    }
+    if ("events" in out) {
+      try {
+        out.events = out.events ? JSON.parse(out.events) : [];
+      } catch {
+        out.events = [];
       }
     }
     return out;
@@ -434,7 +448,10 @@ function createDatabase(options = {}) {
 
     /**
      * Reconcile a completed sweep against stored state, writing devices,
-     * per-scan results and history events. Returns a summary.
+     * per-scan results and history events. Returns a summary plus the raw
+     * `notifications` list (history events enriched with ip/hostname) so a
+     * caller - the webhook dispatcher in core/service.cjs - can act on what
+     * just changed without re-querying the database.
      */
     recordScan({ networkId, scanId, hostsScanned, devices }) {
       const known = backend.all("devices").filter((d) => d.network_id === networkId);
@@ -446,21 +463,27 @@ function createDatabase(options = {}) {
       const seenIds = new Set();
       let newCount = 0;
       const timestamp = nowIso();
+      const notifications = [];
 
-      const addHistory = (deviceId, event, detail) =>
-        backend.insert("device_history", {
+      const addHistory = (deviceId, event, detail, context = {}) => {
+        const row = {
           id: newId(),
           device_id: deviceId,
           scan_id: scanId,
           event,
           detail: typeof detail === "string" ? detail : JSON.stringify(detail),
           created_at: timestamp,
-        });
+        };
+        backend.insert("device_history", row);
+        notifications.push({ ...row, ip: context.ip || null, hostname: context.hostname || null });
+        return row;
+      };
 
       for (const found of devices) {
         const key = found.mac || found.ip;
         let record = byKey.get(key) || byKey.get(found.ip);
         const ports = found.openPorts || [];
+        const context = { ip: found.ip, hostname: found.hostname || (record && record.hostname) };
 
         if (!record) {
           record = {
@@ -484,21 +507,22 @@ function createDatabase(options = {}) {
             }),
           };
           backend.insert("devices", record);
-          addHistory(record.id, "first_seen", `Discovered at ${found.ip}`);
+          addHistory(record.id, "first_seen", `Discovered at ${found.ip}`, context);
           newCount++;
         } else {
           const previousPorts = record.open_ports || [];
           if (!record.online) {
-            addHistory(record.id, "status_change", "Came back online");
+            addHistory(record.id, "status_change", "Came back online", context);
           }
           if (record.ip !== found.ip) {
-            addHistory(record.id, "ip_changed", `${record.ip} -> ${found.ip}`);
+            addHistory(record.id, "ip_changed", `${record.ip} -> ${found.ip}`, context);
           }
           if (found.hostname && record.hostname !== found.hostname) {
             addHistory(
               record.id,
               "hostname_changed",
               `${record.hostname || "unknown"} -> ${found.hostname}`,
+              context,
             );
           }
           if (found.vendor && record.vendor !== found.vendor) {
@@ -506,6 +530,7 @@ function createDatabase(options = {}) {
               record.id,
               "vendor_changed",
               `${record.vendor || "unknown"} -> ${found.vendor}`,
+              context,
             );
           }
           const opened = ports.filter((p) => !previousPorts.includes(p));
@@ -520,6 +545,7 @@ function createDatabase(options = {}) {
               ]
                 .filter(Boolean)
                 .join(" | "),
+              context,
             );
           }
 
@@ -557,7 +583,10 @@ function createDatabase(options = {}) {
       for (const device of known) {
         if (seenIds.has(device.id)) continue;
         if (device.online) {
-          addHistory(device.id, "status_change", "No longer responding");
+          addHistory(device.id, "status_change", "No longer responding", {
+            ip: device.ip,
+            hostname: device.hostname,
+          });
           missingCount++;
         }
         backend.update("devices", device.id, { online: false });
@@ -580,7 +609,7 @@ function createDatabase(options = {}) {
         missing_devices: missingCount,
       };
       api.finishScan(scanId, summary);
-      return summary;
+      return { ...summary, notifications };
     },
 
     /* --------------------------- vault ------------------------------ */
@@ -595,6 +624,15 @@ function createDatabase(options = {}) {
       backend.remove("credentials", () => true);
       backend.remove("vault_meta", () => true);
       return { ok: true };
+    },
+
+    /* -------------------------- webhook ------------------------------ */
+    getWebhookConfig() {
+      return backend.all("webhook_config")[0] || null;
+    },
+    setWebhookConfig(config) {
+      backend.remove("webhook_config", () => true);
+      return backend.insert("webhook_config", { id: "singleton", ...config });
     },
 
     /* ------------------------ credentials ---------------------------- */

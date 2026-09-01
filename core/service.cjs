@@ -25,6 +25,39 @@ const {
   scanNetwork,
 } = require("./scanner.cjs");
 
+// The full set of core/db.cjs recordScan() event kinds a webhook can
+// subscribe to - kept here (not in db.cjs) since it's a webhook-feature
+// concern, not a storage concern.
+const WEBHOOK_EVENTS = [
+  "first_seen",
+  "status_change",
+  "ip_changed",
+  "hostname_changed",
+  "vendor_changed",
+  "ports_changed",
+];
+const DEFAULT_WEBHOOK_EVENTS = ["first_seen", "status_change", "ports_changed"];
+
+function normalizeWebhookConfig(row) {
+  return {
+    url: (row && row.url) || "",
+    enabled: Boolean(row && row.enabled),
+    events:
+      row && Array.isArray(row.events) && row.events.length ? row.events : DEFAULT_WEBHOOK_EVENTS,
+    updatedAt: (row && row.updated_at) || null,
+  };
+}
+
+async function postWebhook(url, payload) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!response.ok) throw new Error(`Webhook endpoint responded with HTTP ${response.status}`);
+}
+
 function createService(options = {}) {
   const db = createDatabase({ file: options.dbFile });
   const ouiCacheFile = path.join(path.dirname(db.file), "oui-cache.json");
@@ -62,6 +95,42 @@ function createService(options = {}) {
     }
   };
 
+  /**
+   * One batched POST per scan - never one per event - so a first scan that
+   * finds thirty devices doesn't fire thirty webhook calls and trip a
+   * receiver's rate limit. A no-op when nothing is configured, disabled, or
+   * nothing this scan matches the subscribed event types. Delivery failures
+   * are logged and broadcast, never thrown: a webhook receiver being down
+   * must never affect scanning itself.
+   */
+  async function dispatchWebhook({ networkId, scanId, summary, notifications }) {
+    const config = normalizeWebhookConfig(db.getWebhookConfig());
+    if (!config.enabled || !config.url) return;
+    const matched = notifications.filter((n) => config.events.includes(n.event));
+    if (!matched.length) return;
+
+    const payload = {
+      type: "netscan.scan_summary",
+      networkId,
+      scanId,
+      timestamp: new Date().toISOString(),
+      summary,
+      events: matched.map((n) => ({
+        event: n.event,
+        detail: n.detail,
+        device: { id: n.device_id, ip: n.ip, hostname: n.hostname },
+      })),
+    };
+
+    try {
+      await postWebhook(config.url, payload);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[netscan] webhook delivery failed: ${message}`);
+      broadcast({ type: "webhook:failed", message });
+    }
+  }
+
   const service = {
     db,
 
@@ -80,6 +149,7 @@ function createService(options = {}) {
         portLabels: PORT_LABELS,
         scanProfiles: Object.keys(SCAN_PROFILES),
         defaultScanProfile: DEFAULT_SCAN_PROFILE,
+        webhookEvents: WEBHOOK_EVENTS,
         interfaces: detectLocalNetworks(),
       };
     },
@@ -105,6 +175,49 @@ function createService(options = {}) {
       const status = await oui.refreshOuiDatabase(ouiCacheFile);
       broadcast({ type: "oui:refreshed", ...status });
       return status;
+    },
+
+    /* -------------------------- webhook ----------------------- */
+    getWebhookConfig() {
+      return normalizeWebhookConfig(db.getWebhookConfig());
+    },
+
+    updateWebhookConfig(patch) {
+      const raw = db.getWebhookConfig();
+      const current = normalizeWebhookConfig(raw);
+      const next = { ...current, ...patch };
+      if (next.url) {
+        try {
+          new URL(next.url);
+        } catch {
+          throw new Error("That doesn't look like a valid URL");
+        }
+      }
+      if (!Array.isArray(next.events) || !next.events.length) {
+        throw new Error("Select at least one event type");
+      }
+      const timestamp = new Date().toISOString();
+      db.setWebhookConfig({
+        url: next.url,
+        enabled: Boolean(next.enabled),
+        events: next.events,
+        created_at: (raw && raw.created_at) || timestamp,
+        updated_at: timestamp,
+      });
+      const updated = service.getWebhookConfig();
+      broadcast({ type: "webhook:updated", config: updated });
+      return updated;
+    },
+
+    async testWebhook() {
+      const config = normalizeWebhookConfig(db.getWebhookConfig());
+      if (!config.url) throw new Error("Set a webhook URL first");
+      await postWebhook(config.url, {
+        type: "netscan.test",
+        timestamp: new Date().toISOString(),
+        message: "This is a test notification from NetScan.",
+      });
+      return { ok: true };
     },
 
     /* ----------------------- networks ----------------------- */
@@ -243,13 +356,14 @@ function createService(options = {}) {
                 broadcast({ type: "device:updated", scanId: run.id, networkId, device: updated });
             },
           });
-          const summary = db.recordScan({
+          const { notifications, ...summary } = db.recordScan({
             networkId,
             scanId: run.id,
             hostsScanned: result.hostsScanned,
             devices: result.devices,
           });
           broadcast({ type: "scan:finished", scanId: run.id, networkId, summary });
+          dispatchWebhook({ networkId, scanId: run.id, summary, notifications });
         } catch (error) {
           db.finishScan(run.id, { status: "failed" });
           broadcast({
