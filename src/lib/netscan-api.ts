@@ -112,8 +112,41 @@ export async function getTransport(): Promise<TransportMode> {
   return (await hasServer()) ? "server" : "demo";
 }
 
+const TOKEN_STORAGE_KEY = "netscan_api_token";
+let cachedToken: string | null | undefined;
+
+/**
+ * Reads a `?token=` set by NETSCAN_API_TOKEN once, remembers it in
+ * localStorage, and scrubs it from the address bar so it doesn't linger in
+ * browser history. Every visit after that reads the stored value instead.
+ */
+function getApiToken(): string | null {
+  if (cachedToken !== undefined) return cachedToken;
+  if (typeof window === "undefined") return (cachedToken = null);
+  try {
+    const url = new URL(window.location.href);
+    const fromUrl = url.searchParams.get("token");
+    if (fromUrl) {
+      window.localStorage.setItem(TOKEN_STORAGE_KEY, fromUrl);
+      url.searchParams.delete("token");
+      window.history.replaceState({}, "", url.toString());
+      cachedToken = fromUrl;
+    } else {
+      cachedToken = window.localStorage.getItem(TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    cachedToken = null;
+  }
+  return cachedToken;
+}
+
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const token = getApiToken();
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
+}
+
 async function get<T>(path: string): Promise<T> {
-  const response = await fetch(`api${path}`);
+  const response = await fetch(`api${path}`, { headers: authHeaders() });
   if (!response.ok) throw new Error(await response.text());
   return (await response.json()) as T;
 }
@@ -121,7 +154,7 @@ async function get<T>(path: string): Promise<T> {
 async function send<T>(path: string, method: string, body: unknown): Promise<T> {
   const response = await fetch(`api${path}`, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(body ?? {}),
   });
   const payload = await response.json().catch(() => ({}));
@@ -475,7 +508,12 @@ export const netscan = {
     void hasServer().then((available) => {
       if (cancelled) return;
       if (available) {
-        const source = new EventSource("api/events");
+        // EventSource can't set headers, so an active token rides along as a
+        // query param instead - the server accepts either form.
+        const token = getApiToken();
+        const source = new EventSource(
+          token ? `api/events?token=${encodeURIComponent(token)}` : "api/events",
+        );
         source.onmessage = (message) => {
           try {
             handler(JSON.parse(message.data) as NetscanEvent);

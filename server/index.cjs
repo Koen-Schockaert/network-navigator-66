@@ -7,6 +7,7 @@
  */
 
 const http = require("node:http");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { createService } = require("../core/service.cjs");
@@ -15,6 +16,11 @@ const PORT = Number(process.env["NETSCAN_PORT"] || 8099) || 8099;
 const HOST = process.env["NETSCAN_HOST"] || "0.0.0.0";
 const DATA_DIR = process.env["NETSCAN_DATA_DIR"] || path.join(process.cwd(), "data");
 const STATIC_DIR = process.env["NETSCAN_STATIC_DIR"] || path.join(__dirname, "..", "dist-app");
+// Opt-in: unset by default so plain `docker compose up`/HA-Ingress deployments
+// (which already gate access some other way) keep working unauthenticated.
+// Set this to require a bearer/query token on every API route except
+// /api/info, which the frontend probes before it has a token to send.
+const API_TOKEN = process.env["NETSCAN_API_TOKEN"] || "";
 
 const service = createService({ dbFile: path.join(DATA_DIR, "netscan.db") });
 
@@ -30,6 +36,21 @@ const MIME = {
   ".ico": "image/x-icon",
   ".woff2": "font/woff2",
 };
+
+/**
+ * EventSource can't set custom headers, so the token may arrive either as
+ * `Authorization: Bearer <token>` (regular fetches) or `?token=` (SSE).
+ * Constant-time compare against a token-length buffer so an invalid guess
+ * can't be timed to learn its correct length.
+ */
+function isAuthorized(req, url) {
+  if (!API_TOKEN) return true;
+  const header = req.headers["authorization"] || "";
+  const supplied = header.startsWith("Bearer ") ? header.slice(7) : url.searchParams.get("token") || "";
+  const expected = Buffer.from(API_TOKEN);
+  const actual = Buffer.from(supplied);
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+}
 
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
@@ -197,6 +218,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
+    const guarded = url.pathname.startsWith("/api/") && url.pathname !== "/api/info";
+    if (guarded && !isAuthorized(req, url)) {
+      return sendJson(res, 401, { error: "Unauthorized - missing or invalid API token" });
+    }
+
     if (url.pathname === "/api/events") return handleEvents(req, res);
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
     return serveStatic(req, res, url.pathname);
@@ -210,6 +236,11 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`[netscan] listening on http://${HOST}:${PORT}`);
   console.log(`[netscan] storage backend: ${service.db.backend} (${service.db.file})`);
+  console.log(
+    API_TOKEN
+      ? "[netscan] API token required - open the UI once with ?token=<value> to authorize this browser"
+      : "[netscan] no API token set (NETSCAN_API_TOKEN) - API is open to anyone reaching this host/port",
+  );
 });
 
 /* Optional scheduled scanning, controlled by env vars. */

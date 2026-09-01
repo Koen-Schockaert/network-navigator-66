@@ -106,7 +106,13 @@ There is no test suite configured in `package.json`.
 
 Server env vars: `NETSCAN_PORT`, `NETSCAN_HOST`, `NETSCAN_DATA_DIR`, `NETSCAN_STATIC_DIR`,
 `NETSCAN_DEFAULT_SUBNET` (auto-seeds a network on first boot), `NETSCAN_INTERVAL_MINUTES` (enables
-scheduled scans). Docker requires `network_mode: host` plus `NET_RAW`/`NET_ADMIN` for real LAN access
+scheduled scans), `NETSCAN_API_TOKEN` (opt-in; when set, every `/api/*` route except `/api/info` and
+the SSE stream require it as `Authorization: Bearer <token>` or `?token=` — open the UI once with
+`?token=<value>` and `src/lib/netscan-api.ts` stores it in `localStorage` and scrubs it from the URL).
+Unset by default so a bare `npm run server`/`docker compose up` still works without a login step; set
+it for any standalone deployment reachable by more than just you, since credentials created through
+the vault feature are otherwise gated only by the master password, not by network access. Docker
+requires `network_mode: host` plus `NET_RAW`/`NET_ADMIN` for real LAN access
 and ARP table reads (works best on Linux hosts); scan data persists in the `netscan-data` volume at
 `/data/netscan.db`.
 

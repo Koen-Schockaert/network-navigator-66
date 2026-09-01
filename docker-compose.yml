@@ -14,6 +14,10 @@ services:
       NETSCAN_PORT: "8099"
       NETSCAN_HOST: "0.0.0.0"
       NETSCAN_DATA_DIR: "/data"
+      # network_mode: host puts 8099 on your LAN unauthenticated. Uncomment
+      # and set this to require a token (open the UI once with ?token=<value>
+      # to authorize your browser) - see CLAUDE.md for details.
+      # NETSCAN_API_TOKEN: ""
     volumes:
       - netscan-data:/data
 
