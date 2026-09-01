@@ -8,6 +8,7 @@ import type {
   HistoryRow,
   Info,
   NetworkRow,
+  OuiStatus,
   ScanRow,
   VaultStatus,
 } from "./netscan-types";
@@ -304,6 +305,10 @@ export const demoInfo: Info = {
 };
 
 export const demoBackend = {
+  getOuiStatus(): OuiStatus {
+    return { builtinEntries: 181, downloadedEntries: 0, updatedAt: null, source: null };
+  },
+
   listNetworks(): NetworkRow[] {
     const { networks, devices, scans } = getState();
     return networks.map((network) => {

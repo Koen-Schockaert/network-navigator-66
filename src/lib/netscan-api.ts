@@ -10,6 +10,7 @@ import type {
   Info,
   NetscanEvent,
   NetworkRow,
+  OuiStatus,
   PingOptions,
   ScanProfile,
   ScanProgress,
@@ -30,6 +31,8 @@ type DesktopBridge = {
   getInfo(): Promise<Info>;
   detectNetworks(): Promise<Info["interfaces"]>;
   previewTargets(target: string): Promise<TargetPreview>;
+  getOuiStatus(): Promise<OuiStatus>;
+  refreshOuiDatabase(): Promise<OuiStatus>;
   listNetworks(): Promise<NetworkRow[]>;
   createNetwork(input: NetworkInput): Promise<NetworkRow>;
   updateNetwork(id: string, patch: Partial<NetworkRow>): Promise<NetworkRow>;
@@ -196,6 +199,22 @@ export const netscan = {
     if (desktop) return desktop.detectNetworks();
     if (await hasServer()) return get<Info["interfaces"]>("/detect");
     return demoInfo.interfaces;
+  },
+
+  async getOuiStatus(): Promise<OuiStatus> {
+    const desktop = bridge();
+    if (desktop) return desktop.getOuiStatus();
+    if (await hasServer()) return get<OuiStatus>("/oui/status");
+    return demoBackend.getOuiStatus();
+  },
+
+  async refreshOuiDatabase(): Promise<OuiStatus> {
+    const desktop = bridge();
+    if (desktop) return desktop.refreshOuiDatabase();
+    if (await hasServer()) return send<OuiStatus>("/oui/refresh", "POST", {});
+    throw new Error(
+      "Vendor database refresh needs the desktop app or container — demo mode has no network access.",
+    );
   },
 
   async previewTargets(target: string): Promise<TargetPreview> {

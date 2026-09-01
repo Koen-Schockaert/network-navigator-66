@@ -7,7 +7,9 @@
  */
 
 const crypto = require("node:crypto");
+const path = require("node:path");
 const { createDatabase } = require("./db.cjs");
+const oui = require("./oui.cjs");
 const vault = require("./vault.cjs");
 const {
   DEFAULT_PORTS,
@@ -25,6 +27,8 @@ const {
 
 function createService(options = {}) {
   const db = createDatabase({ file: options.dbFile });
+  const ouiCacheFile = path.join(path.dirname(db.file), "oui-cache.json");
+  oui.loadOuiCache(ouiCacheFile);
   const listeners = new Set();
 
   /** @type {{ scanId: string, networkId: string, signal: { aborted: boolean }, progress: object } | null} */
@@ -92,6 +96,16 @@ function createService(options = {}) {
       };
     },
     countTargets,
+
+    /* ---------------------- vendor lookup -------------------- */
+    getOuiStatus() {
+      return oui.getOuiStatus();
+    },
+    async refreshOuiDatabase() {
+      const status = await oui.refreshOuiDatabase(ouiCacheFile);
+      broadcast({ type: "oui:refreshed", ...status });
+      return status;
+    },
 
     /* ----------------------- networks ----------------------- */
     listNetworks() {

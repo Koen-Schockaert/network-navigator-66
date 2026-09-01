@@ -132,6 +132,8 @@ async function handleApi(req, res, url) {
         return sendJson(res, 200, service.listHistory(q.get("deviceId") || undefined));
       case "/detect":
         return sendJson(res, 200, service.detectNetworks());
+      case "/oui/status":
+        return sendJson(res, 200, service.getOuiStatus());
       case "/preview":
         return sendJson(res, 200, service.previewTargets(q.get("target") || ""));
       case "/export":
@@ -158,6 +160,8 @@ async function handleApi(req, res, url) {
       return sendJson(res, 200, service.deleteNetwork(body.id));
     case "PATCH /devices":
       return sendJson(res, 200, service.updateDevice(body.id, body.patch || {}));
+    case "POST /oui/refresh":
+      return sendJson(res, 200, await service.refreshOuiDatabase());
     case "POST /scan/start":
       return sendJson(res, 202, await service.startScan(body.networkId, body.options || {}));
     case "POST /scan/stop":

@@ -71,6 +71,8 @@ app.whenReady().then(() => {
   handle("info", () => service.getInfo());
   handle("detectNetworks", () => service.detectNetworks());
   handle("previewTargets", (target) => service.previewTargets(target));
+  handle("getOuiStatus", () => service.getOuiStatus());
+  handle("refreshOuiDatabase", () => service.refreshOuiDatabase());
 
   handle("listNetworks", () => service.listNetworks());
   handle("createNetwork", (input) => service.createNetwork(input));

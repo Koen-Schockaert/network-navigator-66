@@ -179,3 +179,10 @@ export type CredentialPatch = Partial<
 };
 
 export type VaultStatus = { configured: boolean; unlocked: boolean };
+
+export type OuiStatus = {
+  builtinEntries: number;
+  downloadedEntries: number;
+  updatedAt: string | null;
+  source: string | null;
+};

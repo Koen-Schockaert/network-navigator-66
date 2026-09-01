@@ -1,10 +1,14 @@
 "use strict";
 
+const fs = require("node:fs");
+const path = require("node:path");
+
 /**
  * Minimal OUI (MAC vendor prefix) lookup table.
  * Keys are the first 3 bytes of the MAC address: uppercase hex, no separators.
- * Covers common consumer / networking vendors. Can be swapped for the full
- * IEEE OUI database later without changing any caller.
+ * Covers common consumer / networking vendors. Always available even if the
+ * full-database refresh below has never been run, so vendor lookups keep
+ * working offline and on a fresh install.
  */
 const OUI = {
   "000C29": "VMware",
@@ -200,11 +204,21 @@ function normalizeMac(mac) {
   return (hex.match(/.{2}/g) || []).join(":");
 }
 
+/**
+ * Full IEEE snapshot, loaded from disk (loadOuiCache) or fetched fresh
+ * (refreshOuiDatabase). Empty until either has run at least once, in which
+ * case lookupVendor falls back to the small built-in OUI table above -
+ * refreshing is opt-in and this module must keep working without it.
+ */
+let overlay = {};
+let meta = { updatedAt: null, entries: 0, source: null };
+
 /** Look up the vendor for a MAC address. Returns null when unknown. */
 function lookupVendor(mac) {
   const normalized = normalizeMac(mac);
   if (!normalized) return null;
   const prefix = normalized.replace(/:/g, "").slice(0, 6);
+  if (overlay[prefix]) return overlay[prefix];
   if (OUI[prefix]) return OUI[prefix];
 
   // Locally administered addresses (bit 0x02 of the first octet) are
@@ -216,4 +230,115 @@ function lookupVendor(mac) {
   return null;
 }
 
-module.exports = { lookupVendor, normalizeMac, OUI };
+function getOuiStatus() {
+  return {
+    builtinEntries: Object.keys(OUI).length,
+    downloadedEntries: meta.entries,
+    updatedAt: meta.updatedAt,
+    source: meta.source,
+  };
+}
+
+/**
+ * Load a previously downloaded snapshot from disk, if one exists. Safe to
+ * call unconditionally on every startup: a missing or corrupt cache file
+ * just leaves the overlay empty, so lookups fall back to the built-in table.
+ */
+function loadOuiCache(cacheFile) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+    if (raw && raw.entries && typeof raw.entries === "object") {
+      overlay = raw.entries;
+      meta = {
+        updatedAt: raw.updatedAt || null,
+        entries: Object.keys(overlay).length,
+        source: raw.source || null,
+      };
+    }
+  } catch {
+    /* no cache yet, or it's unreadable - fine, the built-in table still works */
+  }
+}
+
+const IEEE_OUI_CSV_URL = "https://standards-oui.ieee.org/oui/oui.csv";
+
+/** Split one CSV line, honoring double-quoted fields (IEEE quotes every field, including ones with commas). */
+function parseCsvLine(line) {
+  const fields = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (inQuotes) {
+      if (char === '"') {
+        if (line[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += char;
+      }
+    } else if (char === '"') {
+      inQuotes = true;
+    } else if (char === ",") {
+      fields.push(field);
+      field = "";
+    } else {
+      field += char;
+    }
+  }
+  fields.push(field);
+  return fields;
+}
+
+/**
+ * Download the full IEEE MA-L assignment list and replace the in-memory
+ * overlay with it, persisting a snapshot to `cacheFile` so the refresh
+ * survives restarts. Entirely opt-in - nothing here ever runs unless a
+ * caller (a UI button, in practice) explicitly asks for it, so offline or
+ * air-gapped deployments are completely unaffected.
+ */
+async function refreshOuiDatabase(cacheFile) {
+  const response = await fetch(IEEE_OUI_CSV_URL, { signal: AbortSignal.timeout(30000) });
+  if (!response.ok) {
+    throw new Error(`Could not reach the IEEE OUI registry (HTTP ${response.status})`);
+  }
+  const text = await response.text();
+
+  const entries = {};
+  for (const line of text.split(/\r?\n/).slice(1)) {
+    if (!line.trim()) continue;
+    const fields = parseCsvLine(line);
+    const prefix = (fields[1] || "").trim().toUpperCase();
+    const org = (fields[2] || "").trim();
+    if (/^[0-9A-F]{6}$/.test(prefix) && org) entries[prefix] = org;
+  }
+
+  // The real list has ~35k rows - a suspiciously short result means the
+  // download was truncated or IEEE changed their format, so bail out
+  // instead of silently shrinking the vendor database.
+  if (Object.keys(entries).length < 1000) {
+    throw new Error("Downloaded OUI list looks incomplete - keeping the previous database");
+  }
+
+  const snapshot = { updatedAt: new Date().toISOString(), source: IEEE_OUI_CSV_URL, entries };
+  fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+  const tmp = `${cacheFile}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(snapshot));
+  fs.renameSync(tmp, cacheFile);
+
+  overlay = entries;
+  meta = { updatedAt: snapshot.updatedAt, entries: Object.keys(entries).length, source: snapshot.source };
+  return getOuiStatus();
+}
+
+module.exports = {
+  OUI,
+  getOuiStatus,
+  loadOuiCache,
+  lookupVendor,
+  normalizeMac,
+  refreshOuiDatabase,
+};
