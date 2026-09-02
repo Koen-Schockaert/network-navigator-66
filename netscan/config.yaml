@@ -1,5 +1,5 @@
 name: NetScan
-version: "1.0.8"
+version: "1.0.9"
 slug: netscan
 description: LAN device inventory & scanner (ICMP/ARP/TCP) with scan history
 url: "https://github.com/Koen-Schockaert/network-navigator-66"
