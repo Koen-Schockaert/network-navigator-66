@@ -135,7 +135,9 @@ const DEEP_EXTRA_PORTS = [
   49152,
 ];
 
-const DEEP_PORTS = Array.from(new Set([...DEFAULT_PORTS, ...DEEP_EXTRA_PORTS])).sort((a, b) => a - b);
+const DEEP_PORTS = Array.from(new Set([...DEFAULT_PORTS, ...DEEP_EXTRA_PORTS])).sort(
+  (a, b) => a - b,
+);
 
 /**
  * Named presets so callers (UI, API, IPC) can request a tradeoff by name

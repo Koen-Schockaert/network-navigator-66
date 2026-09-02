@@ -137,11 +137,7 @@ app.whenReady().then(() => {
       .toLowerCase() || "network";
 
   handle("exportData", () =>
-    saveJsonExport(
-      "Export scan data",
-      `netscan-export-${dateStamp()}.json`,
-      service.exportAll(),
-    ),
+    saveJsonExport("Export scan data", `netscan-export-${dateStamp()}.json`, service.exportAll()),
   );
 
   handle("exportNetwork", (networkId) => {
@@ -155,11 +151,7 @@ app.whenReady().then(() => {
 
   handle("exportScan", (scanId) => {
     const payload = service.exportScan(scanId);
-    return saveJsonExport(
-      "Export scan data",
-      `netscan-scan-${dateStamp()}.json`,
-      payload,
-    );
+    return saveJsonExport("Export scan data", `netscan-scan-${dateStamp()}.json`, payload);
   });
 
   handle("importTargetsFile", async () => {

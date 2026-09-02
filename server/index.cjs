@@ -46,7 +46,9 @@ const MIME = {
 function isAuthorized(req, url) {
   if (!API_TOKEN) return true;
   const header = req.headers["authorization"] || "";
-  const supplied = header.startsWith("Bearer ") ? header.slice(7) : url.searchParams.get("token") || "";
+  const supplied = header.startsWith("Bearer ")
+    ? header.slice(7)
+    : url.searchParams.get("token") || "";
   const expected = Buffer.from(API_TOKEN);
   const actual = Buffer.from(supplied);
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);

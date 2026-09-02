@@ -330,7 +330,11 @@ async function refreshOuiDatabase(cacheFile) {
   fs.renameSync(tmp, cacheFile);
 
   overlay = entries;
-  meta = { updatedAt: snapshot.updatedAt, entries: Object.keys(entries).length, source: snapshot.source };
+  meta = {
+    updatedAt: snapshot.updatedAt,
+    entries: Object.keys(entries).length,
+    source: snapshot.source,
+  };
   return getOuiStatus();
 }
 

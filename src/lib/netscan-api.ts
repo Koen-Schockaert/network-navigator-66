@@ -188,7 +188,12 @@ function dateStamp(): string {
 }
 
 function slugify(value: string): string {
-  return value.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "network";
+  return (
+    value
+      .replace(/[^a-z0-9]+/gi, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase() || "network"
+  );
 }
 
 /** Browser-only save path: build a JSON file in memory and click through an anchor. */
@@ -528,7 +533,10 @@ export const netscan = {
       ? await get<{ network: NetworkRow }>(`/export/network?id=${networkId}`)
       : demoBackend.exportNetwork(networkId);
 
-    downloadJson(payload, `netscan-${slugify(payload.network?.name || networkId)}-${dateStamp()}.json`);
+    downloadJson(
+      payload,
+      `netscan-${slugify(payload.network?.name || networkId)}-${dateStamp()}.json`,
+    );
     return { saved: true };
   },
 
