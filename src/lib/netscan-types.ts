@@ -112,6 +112,7 @@ export type NetscanEvent = {
   device?: DeviceRow;
   credential?: CredentialRow;
   id?: string;
+  ids?: string[];
   sessionId?: string;
   ip?: string;
   sequence?: number;

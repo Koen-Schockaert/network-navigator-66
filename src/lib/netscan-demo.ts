@@ -431,6 +431,7 @@ export const demoBackend = {
     current.networks = current.networks.filter((n) => n.id !== id);
     current.devices = current.devices.filter((d) => d.network_id !== id);
     current.scans = current.scans.filter((s) => s.network_id !== id);
+    current.history = current.history.filter((h) => !removedDeviceIds.has(h.device_id));
     current.credentials = current.credentials.filter((c) => !removedDeviceIds.has(c.device_id));
     return { ok: true };
   },
@@ -449,6 +450,26 @@ export const demoBackend = {
     const device = getState().devices.find((d) => d.id === id);
     if (device) Object.assign(device, patch);
     return device ?? null;
+  },
+
+  updateDevices(ids: string[], patch: Partial<DeviceRow>): DeviceRow[] {
+    const idSet = new Set(ids);
+    const updated: DeviceRow[] = [];
+    for (const device of getState().devices) {
+      if (!idSet.has(device.id)) continue;
+      Object.assign(device, patch);
+      updated.push(device);
+    }
+    return updated;
+  },
+
+  deleteDevices(ids: string[]): { ok: boolean } {
+    const current = getState();
+    const idSet = new Set(ids);
+    current.devices = current.devices.filter((d) => !idSet.has(d.id));
+    current.history = current.history.filter((h) => !idSet.has(h.device_id));
+    current.credentials = current.credentials.filter((c) => !idSet.has(c.device_id));
+    return { ok: true };
   },
 
   async rescanDevicePorts(

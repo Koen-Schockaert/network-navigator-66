@@ -49,6 +49,8 @@ type DesktopBridge = {
   listDevices(networkId?: string): Promise<DeviceRow[]>;
   getDevice(id: string): Promise<DeviceDetail | null>;
   updateDevice(id: string, patch: Partial<DeviceRow>): Promise<DeviceRow>;
+  updateDevices(ids: string[], patch: Partial<DeviceRow>): Promise<DeviceRow[]>;
+  deleteDevices(ids: string[]): Promise<{ ok: boolean }>;
   rescanDevicePorts(id: string, options?: ScanOptions): Promise<{ device: DeviceRow | null }>;
   listScans(networkId?: string): Promise<ScanRow[]>;
   getScanStatus(): Promise<ScanProgress>;
@@ -364,6 +366,20 @@ export const netscan = {
     if (desktop) return desktop.updateDevice(id, patch);
     if (await hasServer()) return send("/devices", "PATCH", { id, patch });
     return demoBackend.updateDevice(id, patch);
+  },
+
+  async updateDevices(ids: string[], patch: Partial<DeviceRow>): Promise<DeviceRow[]> {
+    const desktop = bridge();
+    if (desktop) return desktop.updateDevices(ids, patch);
+    if (await hasServer()) return send<DeviceRow[]>("/devices/bulk", "PATCH", { ids, patch });
+    return demoBackend.updateDevices(ids, patch);
+  },
+
+  async deleteDevices(ids: string[]): Promise<{ ok: boolean }> {
+    const desktop = bridge();
+    if (desktop) return desktop.deleteDevices(ids);
+    if (await hasServer()) return send<{ ok: boolean }>("/devices", "DELETE", { ids });
+    return demoBackend.deleteDevices(ids);
   },
 
   async rescanDevicePorts(

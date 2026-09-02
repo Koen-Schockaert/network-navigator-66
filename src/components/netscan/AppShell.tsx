@@ -5,11 +5,17 @@ import StopIcon from "@mui/icons-material/Stop";
 import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
+import Checkbox from "@mui/material/Checkbox";
 import Container from "@mui/material/Container";
 import CssBaseline from "@mui/material/CssBaseline";
+import FormControl from "@mui/material/FormControl";
+import InputLabel from "@mui/material/InputLabel";
 import LinearProgress from "@mui/material/LinearProgress";
+import ListItemText from "@mui/material/ListItemText";
+import MenuItem from "@mui/material/MenuItem";
+import OutlinedInput from "@mui/material/OutlinedInput";
 import Paper from "@mui/material/Paper";
+import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
@@ -21,7 +27,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getTransport, netscan } from "@/lib/netscan-api";
 import type {
   CredentialRow,
-  Dashboard,
   DeviceRow,
   HistoryRow,
   Info,
@@ -29,38 +34,23 @@ import type {
   ScanProfile,
   ScanProgress,
   ScanRow,
-  TransportMode,
   VaultStatus,
 } from "@/lib/netscan-types";
-import { statusColors, theme } from "@/theme";
+import { theme } from "@/theme";
 import { CredentialsTab } from "./CredentialsTab";
 import { DashboardTab } from "./DashboardTab";
 import { DevicesTab } from "./DevicesTab";
 import { NetworksTab } from "./NetworksTab";
 import { ScansTab } from "./ScansTab";
 import { SettingsTab } from "./SettingsTab";
-import { Mono, deriveScanDeltas } from "./shared";
+import { Mono, buildDashboard, deriveScanDeltas } from "./shared";
 
-const TRANSPORT_COPY: Record<TransportMode, { label: string; hint: string }> = {
-  desktop: {
-    label: "Desktop engine",
-    hint: "Live ICMP, ARP and TCP scanning through the Electron main process.",
-  },
-  server: {
-    label: "Container engine",
-    hint: "Scanning through the Docker container on the host network.",
-  },
-  demo: {
-    label: "Demo data",
-    hint: "Browsers cannot open raw sockets — run the desktop app or container for real scans.",
-  },
-};
+/** Sentinel option in the network filter's Select for "clear the selection". */
+const ALL_NETWORKS = "__all__";
 
 export function AppShell() {
   const [tab, setTab] = useState(0);
-  const [transport, setTransport] = useState<TransportMode>("demo");
   const [info, setInfo] = useState<Info | null>(null);
-  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [networks, setNetworks] = useState<NetworkRow[]>([]);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [scans, setScans] = useState<ScanRow[]>([]);
@@ -71,7 +61,9 @@ export function AppShell() {
     unlocked: false,
   });
   const [progress, setProgress] = useState<ScanProgress>({ running: false });
-  const [networkFilter, setNetworkFilter] = useState("");
+  // Empty selection means "all networks" - the same convention used
+  // throughout core/db.cjs's own networkId filters.
+  const [networkFilter, setNetworkFilter] = useState<string[]>([]);
   const [status, setStatus] = useState<"all" | "online" | "offline">("all");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [deviceIdFilter, setDeviceIdFilter] = useState<string[] | null>(null);
@@ -81,7 +73,6 @@ export function AppShell() {
   const refresh = useCallback(async () => {
     try {
       const [
-        nextDashboard,
         nextNetworks,
         nextDevices,
         nextScans,
@@ -90,7 +81,6 @@ export function AppShell() {
         nextCredentials,
         nextVaultStatus,
       ] = await Promise.all([
-        netscan.getDashboard(),
         netscan.listNetworks(),
         netscan.listDevices(),
         netscan.listScans(),
@@ -99,7 +89,6 @@ export function AppShell() {
         netscan.listCredentials(),
         netscan.getVaultStatus(),
       ]);
-      setDashboard(nextDashboard);
       setNetworks(nextNetworks);
       setDevices(nextDevices);
       setScans(nextScans);
@@ -117,9 +106,8 @@ export function AppShell() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const mode = await getTransport();
+      await getTransport();
       if (!active) return;
-      setTransport(mode);
       setInfo(await netscan.getInfo());
       await refresh();
     })();
@@ -164,14 +152,46 @@ export function AppShell() {
   }, []);
 
   const visibleDevices = useMemo(
-    () => (networkFilter ? devices.filter((d) => d.network_id === networkFilter) : devices),
+    () =>
+      networkFilter.length ? devices.filter((d) => networkFilter.includes(d.network_id)) : devices,
     [devices, networkFilter],
   );
+  const visibleScans = useMemo(
+    () =>
+      networkFilter.length ? scans.filter((s) => networkFilter.includes(s.network_id)) : scans,
+    [scans, networkFilter],
+  );
+  const visibleDeviceIds = useMemo(
+    () => new Set(visibleDevices.map((d) => d.id)),
+    [visibleDevices],
+  );
+  const visibleHistory = useMemo(
+    () =>
+      networkFilter.length ? history.filter((h) => visibleDeviceIds.has(h.device_id)) : history,
+    [history, networkFilter, visibleDeviceIds],
+  );
+  const visibleCredentials = useMemo(
+    () =>
+      networkFilter.length
+        ? credentials.filter((c) => visibleDeviceIds.has(c.device_id))
+        : credentials,
+    [credentials, networkFilter, visibleDeviceIds],
+  );
+  const dashboardData = useMemo(
+    () =>
+      buildDashboard(
+        visibleDevices,
+        visibleScans,
+        visibleHistory,
+        networkFilter.length || networks.length,
+      ),
+    [visibleDevices, visibleScans, visibleHistory, networkFilter, networks.length],
+  );
 
-  const latestScanId = dashboard?.recentScans[0]?.id ?? null;
+  const latestScanId = dashboardData.recentScans[0]?.id ?? null;
   const { newDeviceIds, missingDeviceIds } = useMemo(
-    () => deriveScanDeltas(history, latestScanId),
-    [history, latestScanId],
+    () => deriveScanDeltas(visibleHistory, latestScanId),
+    [visibleHistory, latestScanId],
   );
 
   const onStatusChange = useCallback((value: "all" | "online" | "offline") => {
@@ -201,7 +221,6 @@ export function AppShell() {
   );
 
   const scanning = Boolean(progress.running);
-  const copy = TRANSPORT_COPY[transport];
 
   return (
     <ThemeProvider theme={theme} defaultMode="dark">
@@ -226,17 +245,40 @@ export function AppShell() {
               </Box>
             </Stack>
 
-            <Tooltip title={copy.hint}>
-              <Chip
-                size="small"
-                variant="outlined"
-                label={copy.label}
-                sx={{
-                  color: transport === "demo" ? statusColors.alert : statusColors.online,
-                  borderColor: transport === "demo" ? statusColors.alert : statusColors.online,
-                }}
-              />
-            </Tooltip>
+            {networks.length > 1 ? (
+              <FormControl size="small" sx={{ minWidth: 190 }}>
+                <InputLabel id="network-filter-label">Networks</InputLabel>
+                <Select
+                  labelId="network-filter-label"
+                  multiple
+                  value={networkFilter}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    const values = typeof value === "string" ? value.split(",") : value;
+                    setNetworkFilter(values.includes(ALL_NETWORKS) ? [] : values);
+                  }}
+                  input={<OutlinedInput label="Networks" />}
+                  renderValue={(selected) =>
+                    selected.length === 0
+                      ? "All networks"
+                      : selected.length === 1
+                        ? (networks.find((n) => n.id === selected[0])?.name ?? selected[0])
+                        : `${selected.length} networks`
+                  }
+                >
+                  <MenuItem value={ALL_NETWORKS}>
+                    <Checkbox size="small" checked={networkFilter.length === 0} />
+                    <ListItemText primary="All networks" />
+                  </MenuItem>
+                  {networks.map((network) => (
+                    <MenuItem key={network.id} value={network.id}>
+                      <Checkbox size="small" checked={networkFilter.includes(network.id)} />
+                      <ListItemText primary={network.name} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ) : null}
 
             {scanning ? (
               <Button
@@ -282,12 +324,18 @@ export function AppShell() {
 
         <Container maxWidth="xl" sx={{ pt: 3 }}>
           <Paper sx={{ mb: 3, px: 1 }}>
-            <Tabs value={tab} onChange={(_event, value) => setTab(value as number)}>
+            <Tabs
+              value={tab}
+              onChange={(_event, value) => setTab(value as number)}
+              variant="scrollable"
+              scrollButtons="auto"
+              allowScrollButtonsMobile
+            >
               <Tab label="Overview" />
               <Tab label={`Devices (${visibleDevices.length})`} />
               <Tab label={`Networks (${networks.length})`} />
               <Tab label="Scans & changes" />
-              <Tab label={`Credentials (${credentials.length})`} />
+              <Tab label={`Credentials (${visibleCredentials.length})`} />
               <Tab label="Settings" />
             </Tabs>
           </Paper>
@@ -296,8 +344,8 @@ export function AppShell() {
 
           <Box sx={{ display: tab === 0 ? "block" : "none" }}>
             <DashboardTab
-              data={dashboard}
-              devices={devices}
+              data={dashboardData}
+              devices={visibleDevices}
               newDeviceIds={newDeviceIds}
               missingDeviceIds={missingDeviceIds}
               onFilterDevices={onFilterDevices}
@@ -310,11 +358,9 @@ export function AppShell() {
               allDevices={devices}
               networks={networks}
               history={history}
-              credentials={credentials}
+              credentials={visibleCredentials}
               vaultStatus={vaultStatus}
               info={info}
-              networkFilter={networkFilter}
-              onNetworkFilter={setNetworkFilter}
               status={status}
               onStatusChange={onStatusChange}
               categoryFilter={categoryFilter}
@@ -337,17 +383,17 @@ export function AppShell() {
           </Box>
           <Box sx={{ display: tab === 3 ? "block" : "none" }}>
             <ScansTab
-              scans={scans}
+              scans={visibleScans}
               networks={networks}
-              history={history}
-              devices={devices}
+              history={visibleHistory}
+              devices={visibleDevices}
               onSelectDevice={setSelectedDeviceId}
             />
           </Box>
           <Box sx={{ display: tab === 4 ? "block" : "none" }}>
             <CredentialsTab
-              credentials={credentials}
-              devices={devices}
+              credentials={visibleCredentials}
+              devices={visibleDevices}
               vaultStatus={vaultStatus}
               onRefresh={refresh}
             />
@@ -355,15 +401,6 @@ export function AppShell() {
           <Box sx={{ display: tab === 5 ? "block" : "none" }}>
             <SettingsTab />
           </Box>
-
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ display: "block", mt: 4, textAlign: "center" }}
-          >
-            {copy.hint}
-            {info?.dbFile ? ` · storage: ${info.dbFile}` : ""}
-          </Typography>
         </Container>
       </Box>
     </ThemeProvider>

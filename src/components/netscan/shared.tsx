@@ -8,7 +8,13 @@ import Typography from "@mui/material/Typography";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { netscan } from "@/lib/netscan-api";
-import type { CredentialSecret, HistoryRow } from "@/lib/netscan-types";
+import type {
+  CredentialSecret,
+  Dashboard,
+  DeviceRow,
+  HistoryRow,
+  ScanRow,
+} from "@/lib/netscan-types";
 import { mono, statusColors } from "@/theme";
 
 export function Mono({ children }: { children: ReactNode }) {
@@ -171,6 +177,49 @@ export function historyColor(event: string) {
   if (event === "status_change") return statusColors.alert;
   if (event === "ports_changed") return statusColors.danger;
   return statusColors.offline;
+}
+
+/**
+ * Recomputes the Overview tab's summary stats from already-loaded devices,
+ * scans and history, mirroring core/service.cjs's getDashboard(). Doing this
+ * client-side (rather than a scoped API call) lets the same computation
+ * respond instantly to the network filter without a round trip, and keeps
+ * one code path regardless of whether a filter is active.
+ */
+export function buildDashboard(
+  devices: DeviceRow[],
+  scans: ScanRow[],
+  history: HistoryRow[],
+  networkCount: number,
+): Dashboard {
+  const lastScan = scans[0] ?? null;
+  const online = devices.filter((d) => d.online);
+  const vendorCounts = new Map<string, number>();
+  const categoryCounts = new Map<string, number>();
+  for (const device of devices) {
+    const vendorKey = device.vendor || "Unknown";
+    vendorCounts.set(vendorKey, (vendorCounts.get(vendorKey) ?? 0) + 1);
+    const categoryKey = device.category || "uncategorized";
+    categoryCounts.set(categoryKey, (categoryCounts.get(categoryKey) ?? 0) + 1);
+  }
+  return {
+    totalDevices: devices.length,
+    onlineDevices: online.length,
+    offlineDevices: devices.length - online.length,
+    newDevices: lastScan?.new_devices ?? 0,
+    missingDevices: lastScan?.missing_devices ?? 0,
+    networks: networkCount,
+    lastScanAt: lastScan?.started_at ?? null,
+    vendors: [...vendorCounts.entries()]
+      .map(([vendor, count]) => ({ vendor, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8),
+    categories: [...categoryCounts.entries()]
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count),
+    recentScans: scans.slice(0, 10),
+    recentHistory: history.slice(0, 25),
+  };
 }
 
 export function deriveScanDeltas(history: HistoryRow[], latestScanId: string | null) {

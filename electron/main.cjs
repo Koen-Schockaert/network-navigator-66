@@ -90,6 +90,8 @@ app.whenReady().then(() => {
   handle("listDevices", (networkId) => service.listDevices(networkId));
   handle("getDevice", (id) => service.getDevice(id));
   handle("updateDevice", (id, patch) => service.updateDevice(id, patch));
+  handle("updateDevices", (ids, patch) => service.updateDevices(ids, patch));
+  handle("deleteDevices", (ids) => service.deleteDevices(ids));
   handle("rescanDevicePorts", (id, options) => service.rescanDevicePorts(id, options));
 
   handle("listScans", (networkId) => service.listScans(networkId));

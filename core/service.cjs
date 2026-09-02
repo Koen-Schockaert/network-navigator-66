@@ -331,6 +331,14 @@ function createService(options = {}) {
     updateDevice(id, patch) {
       return db.updateDevice(id, patch);
     },
+    updateDevices(ids, patch) {
+      return db.updateDevices(ids, patch);
+    },
+    deleteDevices(ids) {
+      const result = db.deleteDevices(ids);
+      broadcast({ type: "device:deleted", ids });
+      return result;
+    },
 
     /**
      * Probe a single device's ports on demand (the device detail panel's

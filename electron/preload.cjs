@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld("netscan", {
   listDevices: (networkId) => call("listDevices", networkId),
   getDevice: (id) => call("getDevice", id),
   updateDevice: (id, patch) => call("updateDevice", id, patch),
+  updateDevices: (ids, patch) => call("updateDevices", ids, patch),
+  deleteDevices: (ids) => call("deleteDevices", ids),
   rescanDevicePorts: (id, options) => call("rescanDevicePorts", id, options),
 
   listScans: (networkId) => call("listScans", networkId),

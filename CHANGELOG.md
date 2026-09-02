@@ -7,6 +7,27 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-09-02
+
+### Added
+
+- Filter devices, scans, history and credentials by more than one network at
+  once via the network filter in the top bar.
+- Delete an individual device, or a multi-selection of devices, from the
+  device list — also cascades that device's history and saved logins.
+- Bulk-assign a category to a multi-selection of devices.
+
+### Changed
+
+- The tab bar now scrolls horizontally, with drag/swipe support, instead of
+  overflowing — keeps every tab reachable on narrow screens such as the Home
+  Assistant Ingress panel on iPhone.
+
+### Removed
+
+- The transport status chip ("Desktop engine" / "Container engine" / "Demo
+  data") from the top bar, and the matching hint text from the footer.
+
 ## [1.0.9] - 2026-09-02
 
 ### Added

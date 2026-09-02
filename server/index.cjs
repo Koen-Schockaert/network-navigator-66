@@ -168,6 +168,10 @@ async function handleApi(req, res, url) {
       return sendJson(res, 200, service.deleteNetwork(body.id));
     case "PATCH /devices":
       return sendJson(res, 200, service.updateDevice(body.id, body.patch || {}));
+    case "PATCH /devices/bulk":
+      return sendJson(res, 200, service.updateDevices(body.ids, body.patch || {}));
+    case "DELETE /devices":
+      return sendJson(res, 200, service.deleteDevices(body.ids));
     case "POST /devices/rescan":
       return sendJson(res, 200, await service.rescanDevicePorts(body.id, body.options || {}));
     case "POST /oui/refresh":

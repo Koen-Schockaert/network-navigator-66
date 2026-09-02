@@ -382,9 +382,6 @@ function createDatabase(options = {}) {
         .map((d) => d.id);
       backend.remove("device_history", (r) => deviceIds.includes(r.device_id));
       backend.remove("scan_results", (r) => scanIds.includes(r.scan_id));
-      // NOTE: there is no standalone deleteDevice - devices are only ever
-      // removed here, via their network's cascade. If a standalone
-      // deleteDevice is ever added, it must cascade credentials too.
       backend.remove("credentials", (r) => deviceIds.includes(r.device_id));
       backend.remove("devices", (r) => r.network_id === id);
       backend.remove("scan_runs", (r) => r.network_id === id);
@@ -432,6 +429,16 @@ function createDatabase(options = {}) {
     },
     updateDevice(id, patch) {
       return backend.update("devices", id, patch);
+    },
+    updateDevices(ids, patch) {
+      return ids.map((id) => backend.update("devices", id, patch));
+    },
+    deleteDevices(ids) {
+      backend.remove("device_history", (r) => ids.includes(r.device_id));
+      backend.remove("scan_results", (r) => ids.includes(r.device_id));
+      backend.remove("credentials", (r) => ids.includes(r.device_id));
+      backend.remove("devices", (r) => ids.includes(r.id));
+      return { ok: true };
     },
 
     /**

@@ -32,7 +32,7 @@ import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import { DataGrid, type GridColDef } from "@mui/x-data-grid";
+import { DataGrid, type GridColDef, type GridRowSelectionModel } from "@mui/x-data-grid";
 import { useEffect, useMemo, useState } from "react";
 import { buildCredentialUrl, protocolMeta } from "@/lib/credential-protocols";
 import { DEVICE_CATEGORIES, categoryMeta } from "@/lib/device-categories";
@@ -73,8 +73,6 @@ type Props = {
   credentials: CredentialRow[];
   vaultStatus: VaultStatus;
   info: Info | null;
-  networkFilter: string;
-  onNetworkFilter: (value: string) => void;
   status: "all" | "online" | "offline";
   onStatusChange: (value: "all" | "online" | "offline") => void;
   categoryFilter: string;
@@ -94,8 +92,6 @@ export function DevicesTab({
   credentials,
   vaultStatus,
   info,
-  networkFilter,
-  onNetworkFilter,
   status,
   onStatusChange,
   categoryFilter,
@@ -112,6 +108,10 @@ export function DevicesTab({
     [allDevices, selectedDeviceId],
   );
   const labels = useMemo(() => info?.portLabels ?? {}, [info?.portLabels]);
+  const networkNameById = useMemo(
+    () => new Map(networks.map((network) => [network.id, network.name])),
+    [networks],
+  );
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -127,6 +127,48 @@ export function DevicesTab({
     });
   }, [devices, search, status, categoryFilter, deviceIdFilter]);
 
+  const [rowSelectionModel, setRowSelectionModel] = useState<GridRowSelectionModel>({
+    type: "include",
+    ids: new Set(),
+  });
+  const selectedDeviceIds = useMemo(
+    () =>
+      rowSelectionModel.type === "include"
+        ? (Array.from(rowSelectionModel.ids) as string[])
+        : rows.map((row) => row.id).filter((id) => !rowSelectionModel.ids.has(id)),
+    [rowSelectionModel, rows],
+  );
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkSavingCategory, setBulkSavingCategory] = useState(false);
+
+  async function deleteSelectedDevices() {
+    if (!selectedDeviceIds.length) return;
+    setBulkDeleting(true);
+    try {
+      await netscan.deleteDevices(selectedDeviceIds);
+      if (selectedDeviceId && selectedDeviceIds.includes(selectedDeviceId)) onSelectDevice(null);
+      setRowSelectionModel({ type: "include", ids: new Set() });
+      setBulkDeleteOpen(false);
+      onRefresh();
+    } finally {
+      setBulkDeleting(false);
+    }
+  }
+
+  async function setSelectedDevicesCategory(value: string) {
+    if (!selectedDeviceIds.length) return;
+    setBulkSavingCategory(true);
+    try {
+      await netscan.updateDevices(selectedDeviceIds, {
+        category: value === "none" ? null : value,
+      });
+      onRefresh();
+    } finally {
+      setBulkSavingCategory(false);
+    }
+  }
+
   const columns: GridColDef<DeviceRow>[] = useMemo(
     () => [
       {
@@ -136,6 +178,16 @@ export function DevicesTab({
         renderCell: (params) => <StatusChip online={Boolean(params.value)} />,
         sortable: true,
       },
+      ...(networks.length > 1
+        ? [
+            {
+              field: "network_id",
+              headerName: "Network",
+              width: 150,
+              valueGetter: (_value, row) => networkNameById.get(row.network_id) ?? row.network_id,
+            } satisfies GridColDef<DeviceRow>,
+          ]
+        : []),
       {
         field: "label",
         headerName: "Label",
@@ -209,7 +261,7 @@ export function DevicesTab({
         valueGetter: (_value, row) => relativeTime(row.last_seen),
       },
     ],
-    [labels],
+    [labels, networks.length, networkNameById],
   );
 
   const deviceHistory = selected ? history.filter((entry) => entry.device_id === selected.id) : [];
@@ -245,6 +297,8 @@ export function DevicesTab({
   const [credentialFormOpen, setCredentialFormOpen] = useState(false);
   const [editingCredential, setEditingCredential] = useState<CredentialRow | null>(null);
   const [deleteCredentialTarget, setDeleteCredentialTarget] = useState<CredentialRow | null>(null);
+  const [deleteDeviceConfirmOpen, setDeleteDeviceConfirmOpen] = useState(false);
+  const [deletingDevice, setDeletingDevice] = useState(false);
 
   useEffect(() => {
     if (!vaultStatus.unlocked) clear();
@@ -262,6 +316,19 @@ export function DevicesTab({
     await netscan.deleteCredential(deleteCredentialTarget.id);
     setDeleteCredentialTarget(null);
     onRefresh();
+  }
+
+  async function deleteDevice() {
+    if (!selected) return;
+    setDeletingDevice(true);
+    try {
+      await netscan.deleteDevices([selected.id]);
+      setDeleteDeviceConfirmOpen(false);
+      closeDeviceDialog();
+      onRefresh();
+    } finally {
+      setDeletingDevice(false);
+    }
   }
 
   const [labelDraft, setLabelDraft] = useState("");
@@ -340,20 +407,6 @@ export function DevicesTab({
         />
         <TextField
           select
-          label="Network"
-          value={networkFilter}
-          onChange={(event) => onNetworkFilter(event.target.value)}
-          sx={{ minWidth: 190 }}
-        >
-          <MenuItem value="">All networks</MenuItem>
-          {networks.map((network) => (
-            <MenuItem key={network.id} value={network.id}>
-              {network.name}
-            </MenuItem>
-          ))}
-        </TextField>
-        <TextField
-          select
           label="Category"
           value={categoryFilter}
           onChange={(event) => onCategoryChange(event.target.value)}
@@ -390,11 +443,52 @@ export function DevicesTab({
         />
       ) : null}
 
+      {selectedDeviceIds.length > 0 ? (
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", alignSelf: "flex-start" }}>
+          <Typography variant="body2" color="text.secondary">
+            {selectedDeviceIds.length} device{selectedDeviceIds.length === 1 ? "" : "s"} selected
+          </Typography>
+          <TextField
+            select
+            size="small"
+            label="Set category"
+            value=""
+            onChange={(event) => setSelectedDevicesCategory(event.target.value)}
+            disabled={bulkSavingCategory}
+            sx={{ minWidth: 170 }}
+          >
+            <MenuItem value="none">Uncategorized</MenuItem>
+            {DEVICE_CATEGORIES.map((category) => (
+              <MenuItem key={category.value} value={category.value}>
+                {category.label}
+              </MenuItem>
+            ))}
+          </TextField>
+          <Button
+            size="small"
+            color="error"
+            startIcon={<DeleteOutlineIcon fontSize="small" />}
+            onClick={() => setBulkDeleteOpen(true)}
+          >
+            Delete selected
+          </Button>
+          <Button
+            size="small"
+            onClick={() => setRowSelectionModel({ type: "include", ids: new Set() })}
+          >
+            Clear selection
+          </Button>
+        </Stack>
+      ) : null}
+
       <Card sx={{ height: 620 }}>
         <DataGrid
           rows={rows}
           columns={columns}
           density="comfortable"
+          checkboxSelection
+          rowSelectionModel={rowSelectionModel}
+          onRowSelectionModelChange={setRowSelectionModel}
           disableRowSelectionOnClick
           onRowClick={(params) => onSelectDevice((params.row as DeviceRow).id)}
           initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
@@ -431,6 +525,15 @@ export function DevicesTab({
                     aria-label="Ping device"
                   >
                     <NetworkPingIcon fontSize="inherit" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Delete this device">
+                  <IconButton
+                    size="small"
+                    onClick={() => setDeleteDeviceConfirmOpen(true)}
+                    aria-label="Delete device"
+                  >
+                    <DeleteOutlineIcon fontSize="inherit" />
                   </IconButton>
                 </Tooltip>
               </Stack>
@@ -719,6 +822,55 @@ export function DevicesTab({
         <DialogActions>
           <Button onClick={() => setDeleteCredentialTarget(null)}>Cancel</Button>
           <Button color="error" variant="contained" onClick={deleteCredential}>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={deleteDeviceConfirmOpen} onClose={() => setDeleteDeviceConfirmOpen(false)}>
+        <DialogTitle>Delete device</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            Delete {selected?.hostname || selected?.ip}? This removes its history and saved logins
+            too. This cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDeviceConfirmOpen(false)} disabled={deletingDevice}>
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={deleteDevice}
+            disabled={deletingDevice}
+            startIcon={deletingDevice ? <CircularProgress size={14} /> : undefined}
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={bulkDeleteOpen} onClose={() => setBulkDeleteOpen(false)}>
+        <DialogTitle>Delete {selectedDeviceIds.length} devices</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            Delete {selectedDeviceIds.length} selected device
+            {selectedDeviceIds.length === 1 ? "" : "s"}? This removes their history and saved logins
+            too. This cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkDeleteOpen(false)} disabled={bulkDeleting}>
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={deleteSelectedDevices}
+            disabled={bulkDeleting}
+            startIcon={bulkDeleting ? <CircularProgress size={14} /> : undefined}
+          >
             Delete
           </Button>
         </DialogActions>
