@@ -38,6 +38,7 @@ import { DashboardTab } from "./DashboardTab";
 import { DevicesTab } from "./DevicesTab";
 import { NetworksTab } from "./NetworksTab";
 import { ScansTab } from "./ScansTab";
+import { SettingsTab } from "./SettingsTab";
 import { Mono, deriveScanDeltas } from "./shared";
 
 const TRANSPORT_COPY: Record<TransportMode, { label: string; hint: string }> = {
@@ -287,6 +288,7 @@ export function AppShell() {
               <Tab label={`Networks (${networks.length})`} />
               <Tab label="Scans & changes" />
               <Tab label={`Credentials (${credentials.length})`} />
+              <Tab label="Settings" />
             </Tabs>
           </Paper>
 
@@ -349,6 +351,9 @@ export function AppShell() {
               vaultStatus={vaultStatus}
               onRefresh={refresh}
             />
+          </Box>
+          <Box sx={{ display: tab === 5 ? "block" : "none" }}>
+            <SettingsTab />
           </Box>
 
           <Typography

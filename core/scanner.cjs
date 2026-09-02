@@ -150,9 +150,22 @@ const SCAN_PROFILES = {
 };
 const DEFAULT_SCAN_PROFILE = "standard";
 
-/** Resolve a named profile (falling back to the default) into scanNetwork() option overrides. */
-function resolveScanProfile(profile) {
-  return SCAN_PROFILES[profile] || SCAN_PROFILES[DEFAULT_SCAN_PROFILE];
+/**
+ * Resolve a named profile (falling back to the default) into scanNetwork()
+ * option overrides. `portOverrides` is the optional user-configured port list
+ * per profile (core/service.cjs's normalized scan-profile-ports config) - when
+ * the resolved profile has one, it replaces that profile's port list and
+ * forces scanPorts on (so a custom list also re-enables port scanning for a
+ * profile - namely "quick" - whose default is ping-only).
+ */
+function resolveScanProfile(profile, portOverrides) {
+  const key = SCAN_PROFILES[profile] ? profile : DEFAULT_SCAN_PROFILE;
+  const base = SCAN_PROFILES[key];
+  const customPorts = portOverrides && portOverrides[key];
+  if (Array.isArray(customPorts)) {
+    return { ...base, ports: customPorts.slice(), scanPorts: true };
+  }
+  return base;
 }
 
 /* ------------------------------------------------------------------ */

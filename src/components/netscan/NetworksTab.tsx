@@ -1,24 +1,17 @@
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import DownloadIcon from "@mui/icons-material/Download";
-import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import RadarIcon from "@mui/icons-material/Radar";
-import SendIcon from "@mui/icons-material/Send";
-import SyncIcon from "@mui/icons-material/Sync";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
-import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
-import CircularProgress from "@mui/material/CircularProgress";
-import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
-import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
@@ -26,16 +19,9 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { useEffect, useState } from "react";
 import { netscan } from "@/lib/netscan-api";
-import type {
-  Info,
-  NetworkRow,
-  OuiStatus,
-  ScanProfile,
-  WebhookConfig,
-  WebhookEvent,
-} from "@/lib/netscan-types";
+import type { Info, NetworkRow, ScanProfile } from "@/lib/netscan-types";
 import { statusColors } from "@/theme";
-import { HISTORY_LABELS, Mono, relativeTime } from "./shared";
+import { Mono, relativeTime } from "./shared";
 
 type Props = {
   networks: NetworkRow[];
@@ -57,233 +43,6 @@ function readStoredProfile(fallback: ScanProfile): ScanProfile {
   if (typeof window === "undefined") return fallback;
   const stored = window.localStorage.getItem(PROFILE_STORAGE_KEY);
   return stored === "quick" || stored === "standard" || stored === "deep" ? stored : fallback;
-}
-
-function VendorDatabaseCard() {
-  const [status, setStatus] = useState<OuiStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    netscan
-      .getOuiStatus()
-      .then(setStatus)
-      .catch(() => setStatus(null));
-  }, []);
-
-  async function refresh() {
-    setBusy(true);
-    setError(null);
-    try {
-      setStatus(await netscan.refreshOuiDatabase());
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not refresh the vendor database");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const totalKnown = (status?.builtinEntries ?? 0) + (status?.downloadedEntries ?? 0);
-
-  return (
-    <Card>
-      <CardContent>
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          spacing={1.5}
-          sx={{ alignItems: { sm: "center" }, justifyContent: "space-between" }}
-        >
-          <Box>
-            <Typography variant="h6">Vendor database</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {status?.downloadedEntries
-                ? `${totalKnown.toLocaleString()} known MAC prefixes · full IEEE snapshot from ${relativeTime(status.updatedAt)}`
-                : `${totalKnown.toLocaleString()} known MAC prefixes (built-in list only) — refresh to pull the full IEEE registry`}
-            </Typography>
-          </Box>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={busy ? <CircularProgress size={16} /> : <SyncIcon />}
-            disabled={busy}
-            onClick={refresh}
-          >
-            {busy ? "Refreshing…" : "Refresh now"}
-          </Button>
-        </Stack>
-        {error ? (
-          <Alert severity="warning" sx={{ mt: 1.5 }} onClose={() => setError(null)}>
-            {error}
-          </Alert>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-const WEBHOOK_EVENTS: WebhookEvent[] = [
-  "first_seen",
-  "status_change",
-  "ip_changed",
-  "hostname_changed",
-  "vendor_changed",
-  "ports_changed",
-];
-
-function WebhookCard() {
-  const [config, setConfig] = useState<WebhookConfig | null>(null);
-  const [url, setUrl] = useState("");
-  const [enabled, setEnabled] = useState(false);
-  const [events, setEvents] = useState<WebhookEvent[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  useEffect(() => {
-    netscan
-      .getWebhookConfig()
-      .then((loaded) => {
-        setConfig(loaded);
-        setUrl(loaded.url);
-        setEnabled(loaded.enabled);
-        setEvents(loaded.events);
-      })
-      .catch(() => null);
-  }, []);
-
-  function toggleEvent(event: WebhookEvent) {
-    setEvents((prev) =>
-      prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event],
-    );
-  }
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const updated = await netscan.updateWebhookConfig({ url: url.trim(), enabled, events });
-      setConfig(updated);
-      setNotice("Saved.");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not save the webhook settings");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function sendTest() {
-    setTesting(true);
-    setError(null);
-    setNotice(null);
-    try {
-      await netscan.testWebhook();
-      setNotice("Test notification delivered.");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not deliver the test notification");
-    } finally {
-      setTesting(false);
-    }
-  }
-
-  const dirty =
-    config !== null &&
-    (url.trim() !== config.url ||
-      enabled !== config.enabled ||
-      events.length !== config.events.length ||
-      events.some((e) => !config.events.includes(e)));
-
-  return (
-    <Card>
-      <CardContent>
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          spacing={1.5}
-          sx={{ alignItems: { sm: "flex-start" }, justifyContent: "space-between" }}
-        >
-          <Box>
-            <Typography variant="h6">Webhook notifications</Typography>
-            <Typography variant="caption" color="text.secondary">
-              POST a summary of what changed to your own URL whenever a scan finishes — one call per
-              scan, not per device.
-            </Typography>
-          </Box>
-          <FormControlLabel
-            control={<Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />}
-            label={enabled ? "Enabled" : "Disabled"}
-          />
-        </Stack>
-
-        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ mt: 2 }}>
-          <TextField
-            label="Webhook URL"
-            placeholder="https://example.com/hooks/netscan"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            fullWidth
-          />
-        </Stack>
-
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 2, mb: 0.5 }}>
-          Notify on
-        </Typography>
-        <Stack direction="row" spacing={0} useFlexGap sx={{ flexWrap: "wrap" }}>
-          {WEBHOOK_EVENTS.map((event) => (
-            <FormControlLabel
-              key={event}
-              sx={{ minWidth: 190 }}
-              control={
-                <Checkbox
-                  size="small"
-                  checked={events.includes(event)}
-                  onChange={() => toggleEvent(event)}
-                />
-              }
-              label={<Typography variant="body2">{HISTORY_LABELS[event] || event}</Typography>}
-            />
-          ))}
-        </Stack>
-
-        <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: "center" }}>
-          <Button
-            variant="contained"
-            size="small"
-            startIcon={saving ? <CircularProgress size={16} /> : <NotificationsActiveIcon />}
-            disabled={saving || !dirty || !events.length}
-            onClick={save}
-          >
-            {saving ? "Saving…" : "Save"}
-          </Button>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={testing ? <CircularProgress size={16} /> : <SendIcon />}
-            disabled={testing || !config?.url || dirty}
-            onClick={sendTest}
-          >
-            {testing ? "Sending…" : "Send test"}
-          </Button>
-          {config?.updatedAt ? (
-            <Typography variant="caption" color="text.secondary">
-              Last saved {relativeTime(config.updatedAt)}
-            </Typography>
-          ) : null}
-        </Stack>
-
-        {notice ? (
-          <Alert severity="success" sx={{ mt: 1.5 }} onClose={() => setNotice(null)}>
-            {notice}
-          </Alert>
-        ) : null}
-        {error ? (
-          <Alert severity="warning" sx={{ mt: 1.5 }} onClose={() => setError(null)}>
-            {error}
-          </Alert>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
 }
 
 export function NetworksTab({ networks, info, scanning, onRefresh, onScan }: Props) {
@@ -459,10 +218,6 @@ export function NetworksTab({ networks, info, scanning, onRefresh, onScan }: Pro
           ) : null}
         </CardContent>
       </Card>
-
-      <VendorDatabaseCard />
-
-      <WebhookCard />
 
       <Stack
         direction={{ xs: "column", sm: "row" }}

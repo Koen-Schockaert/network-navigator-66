@@ -40,6 +40,7 @@ function createJsonBackend(file) {
     vault_meta: [],
     credentials: [],
     webhook_config: [],
+    scan_profile_config: [],
   };
 
   let state = { ...empty };
@@ -160,6 +161,7 @@ const TABLE_COLUMNS = {
     "updated_at",
   ],
   webhook_config: ["id", "url", "enabled", "events", "created_at", "updated_at"],
+  scan_profile_config: ["id", "quick_ports", "standard_ports", "deep_ports", "updated_at"],
 };
 
 function createSqliteBackend(file) {
@@ -214,6 +216,10 @@ function createSqliteBackend(file) {
         id TEXT PRIMARY KEY, url TEXT, enabled INTEGER, events TEXT,
         created_at TEXT, updated_at TEXT
       );
+      CREATE TABLE IF NOT EXISTS scan_profile_config (
+        id TEXT PRIMARY KEY, quick_ports TEXT, standard_ports TEXT, deep_ports TEXT,
+        updated_at TEXT
+      );
       CREATE INDEX IF NOT EXISTS idx_devices_network ON devices(network_id);
       CREATE INDEX IF NOT EXISTS idx_results_scan ON scan_results(scan_id);
       CREATE INDEX IF NOT EXISTS idx_history_device ON device_history(device_id);
@@ -251,6 +257,18 @@ function createSqliteBackend(file) {
         out.events = out.events ? JSON.parse(out.events) : [];
       } catch {
         out.events = [];
+      }
+    }
+    // Unlike open_ports/events, null here is meaningful (no override configured
+    // for that profile - use the built-in port list) and must survive the
+    // round trip rather than collapse to [] (an override to zero ports).
+    for (const key of ["quick_ports", "standard_ports", "deep_ports"]) {
+      if (key in out) {
+        try {
+          out[key] = out[key] === null || out[key] === undefined ? null : JSON.parse(out[key]);
+        } catch {
+          out[key] = null;
+        }
       }
     }
     return out;
@@ -612,6 +630,80 @@ function createDatabase(options = {}) {
       return { ...summary, notifications };
     },
 
+    /**
+     * Apply a targeted, single-device probe (the device detail panel's
+     * "rescan ports" action) to just that device. Deliberately not a scaled
+     * down recordScan(): recordScan() reconciles a whole network sweep and
+     * marks every known device it didn't see as offline, which would be
+     * wrong here - probing one IP must never affect any other device.
+     * `found` is the one scanNetwork() result for that device's IP, or null
+     * if it didn't respond.
+     */
+    rescanDevice({ deviceId, found }) {
+      const record = backend.all("devices").find((d) => d.id === deviceId);
+      if (!record) return null;
+      const timestamp = nowIso();
+      const notifications = [];
+      const addHistory = (event, detail) => {
+        const row = {
+          id: newId(),
+          device_id: record.id,
+          scan_id: null,
+          event,
+          detail: typeof detail === "string" ? detail : JSON.stringify(detail),
+          created_at: timestamp,
+        };
+        backend.insert("device_history", row);
+        notifications.push({
+          ...row,
+          ip: record.ip,
+          hostname: (found && found.hostname) || record.hostname,
+        });
+      };
+
+      if (!found) {
+        if (record.online) addHistory("status_change", "No longer responding");
+        return { device: backend.update("devices", record.id, { online: false }), notifications };
+      }
+
+      const ports = found.openPorts || [];
+      const previousPorts = record.open_ports || [];
+      if (!record.online) addHistory("status_change", "Came back online");
+      if (found.hostname && record.hostname !== found.hostname) {
+        addHistory("hostname_changed", `${record.hostname || "unknown"} -> ${found.hostname}`);
+      }
+      if (found.vendor && record.vendor !== found.vendor) {
+        addHistory("vendor_changed", `${record.vendor || "unknown"} -> ${found.vendor}`);
+      }
+      const opened = ports.filter((p) => !previousPorts.includes(p));
+      const closed = previousPorts.filter((p) => !ports.includes(p));
+      if (opened.length || closed.length) {
+        addHistory(
+          "ports_changed",
+          [
+            opened.length ? `opened: ${opened.join(", ")}` : null,
+            closed.length ? `closed: ${closed.join(", ")}` : null,
+          ]
+            .filter(Boolean)
+            .join(" | "),
+        );
+      }
+
+      const vendor = found.vendor || record.vendor;
+      const hostname = found.hostname || record.hostname;
+      const updated = backend.update("devices", record.id, {
+        hostname,
+        mac: found.mac || record.mac,
+        vendor,
+        online: true,
+        response_time: found.responseTime ?? null,
+        open_ports: ports,
+        last_seen: timestamp,
+        category: record.category || guessCategory({ vendor, hostname, openPorts: ports }),
+      });
+      return { device: updated, notifications };
+    },
+
     /* --------------------------- vault ------------------------------ */
     getVaultMeta() {
       return backend.all("vault_meta")[0] || null;
@@ -633,6 +725,15 @@ function createDatabase(options = {}) {
     setWebhookConfig(config) {
       backend.remove("webhook_config", () => true);
       return backend.insert("webhook_config", { id: "singleton", ...config });
+    },
+
+    /* ------------------------ scan profile ports ---------------------- */
+    getScanProfileConfig() {
+      return backend.all("scan_profile_config")[0] || null;
+    },
+    setScanProfileConfig(config) {
+      backend.remove("scan_profile_config", () => true);
+      return backend.insert("scan_profile_config", { id: "singleton", ...config });
     },
 
     /* ------------------------ credentials ---------------------------- */

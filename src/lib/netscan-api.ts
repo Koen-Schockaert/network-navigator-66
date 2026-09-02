@@ -13,6 +13,7 @@ import type {
   OuiStatus,
   PingOptions,
   ScanProfile,
+  ScanProfilePortsConfig,
   ScanProgress,
   ScanRow,
   TransportMode,
@@ -38,6 +39,9 @@ type DesktopBridge = {
   getWebhookConfig(): Promise<WebhookConfig>;
   updateWebhookConfig(patch: WebhookConfigPatch): Promise<WebhookConfig>;
   testWebhook(): Promise<{ ok: boolean }>;
+  getScanProfilePorts(): Promise<ScanProfilePortsConfig>;
+  updateScanProfilePorts(profile: ScanProfile, ports: number[]): Promise<ScanProfilePortsConfig>;
+  resetScanProfilePorts(profile: ScanProfile): Promise<ScanProfilePortsConfig>;
   listNetworks(): Promise<NetworkRow[]>;
   createNetwork(input: NetworkInput): Promise<NetworkRow>;
   updateNetwork(id: string, patch: Partial<NetworkRow>): Promise<NetworkRow>;
@@ -45,6 +49,7 @@ type DesktopBridge = {
   listDevices(networkId?: string): Promise<DeviceRow[]>;
   getDevice(id: string): Promise<DeviceDetail | null>;
   updateDevice(id: string, patch: Partial<DeviceRow>): Promise<DeviceRow>;
+  rescanDevicePorts(id: string, options?: ScanOptions): Promise<{ device: DeviceRow | null }>;
   listScans(networkId?: string): Promise<ScanRow[]>;
   getScanStatus(): Promise<ScanProgress>;
   startScan(networkId: string, options?: ScanOptions): Promise<{ scanId: string }>;
@@ -266,6 +271,34 @@ export const netscan = {
     );
   },
 
+  async getScanProfilePorts(): Promise<ScanProfilePortsConfig> {
+    const desktop = bridge();
+    if (desktop) return desktop.getScanProfilePorts();
+    if (await hasServer()) return get<ScanProfilePortsConfig>("/scan-profiles");
+    return demoBackend.getScanProfilePorts();
+  },
+
+  async updateScanProfilePorts(
+    profile: ScanProfile,
+    ports: number[],
+  ): Promise<ScanProfilePortsConfig> {
+    const desktop = bridge();
+    if (desktop) return desktop.updateScanProfilePorts(profile, ports);
+    if (await hasServer()) {
+      return send<ScanProfilePortsConfig>("/scan-profiles", "PATCH", { profile, ports });
+    }
+    return demoBackend.updateScanProfilePorts(profile, ports);
+  },
+
+  async resetScanProfilePorts(profile: ScanProfile): Promise<ScanProfilePortsConfig> {
+    const desktop = bridge();
+    if (desktop) return desktop.resetScanProfilePorts(profile);
+    if (await hasServer()) {
+      return send<ScanProfilePortsConfig>("/scan-profiles/reset", "POST", { profile });
+    }
+    return demoBackend.resetScanProfilePorts(profile);
+  },
+
   async previewTargets(target: string): Promise<TargetPreview> {
     const desktop = bridge();
     if (desktop) return desktop.previewTargets(target);
@@ -331,6 +364,18 @@ export const netscan = {
     if (desktop) return desktop.updateDevice(id, patch);
     if (await hasServer()) return send("/devices", "PATCH", { id, patch });
     return demoBackend.updateDevice(id, patch);
+  },
+
+  async rescanDevicePorts(
+    id: string,
+    options: ScanOptions = {},
+  ): Promise<{ device: DeviceRow | null }> {
+    const desktop = bridge();
+    if (desktop) return desktop.rescanDevicePorts(id, options);
+    if (await hasServer()) {
+      return send<{ device: DeviceRow | null }>("/devices/rescan", "POST", { id, options });
+    }
+    return demoBackend.rescanDevicePorts(id, options);
   },
 
   async listScans(networkId?: string): Promise<ScanRow[]> {

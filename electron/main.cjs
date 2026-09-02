@@ -76,6 +76,11 @@ app.whenReady().then(() => {
   handle("getWebhookConfig", () => service.getWebhookConfig());
   handle("updateWebhookConfig", (patch) => service.updateWebhookConfig(patch));
   handle("testWebhook", () => service.testWebhook());
+  handle("getScanProfilePorts", () => service.getScanProfilePorts());
+  handle("updateScanProfilePorts", (profile, ports) =>
+    service.updateScanProfilePorts(profile, ports),
+  );
+  handle("resetScanProfilePorts", (profile) => service.resetScanProfilePorts(profile));
 
   handle("listNetworks", () => service.listNetworks());
   handle("createNetwork", (input) => service.createNetwork(input));
@@ -85,6 +90,7 @@ app.whenReady().then(() => {
   handle("listDevices", (networkId) => service.listDevices(networkId));
   handle("getDevice", (id) => service.getDevice(id));
   handle("updateDevice", (id, patch) => service.updateDevice(id, patch));
+  handle("rescanDevicePorts", (id, options) => service.rescanDevicePorts(id, options));
 
   handle("listScans", (networkId) => service.listScans(networkId));
   handle("getScanDetail", (id) => service.getScanDetail(id));

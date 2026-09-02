@@ -12,6 +12,7 @@ const { createDatabase } = require("./db.cjs");
 const oui = require("./oui.cjs");
 const vault = require("./vault.cjs");
 const {
+  DEEP_PORTS,
   DEFAULT_PORTS,
   DEFAULT_SCAN_PROFILE,
   PORT_LABELS,
@@ -24,6 +25,38 @@ const {
   resolveScanProfile,
   scanNetwork,
 } = require("./scanner.cjs");
+
+// The ports each profile probes out of the box, before any user override -
+// "quick" is ping-only by design (see SCAN_PROFILES), so it starts empty.
+const DEFAULT_SCAN_PROFILE_PORTS = { quick: [], standard: DEFAULT_PORTS, deep: DEEP_PORTS };
+
+function normalizeScanProfileConfig(row) {
+  const overrides = {
+    quick: row && Array.isArray(row.quick_ports) ? row.quick_ports : null,
+    standard: row && Array.isArray(row.standard_ports) ? row.standard_ports : null,
+    deep: row && Array.isArray(row.deep_ports) ? row.deep_ports : null,
+  };
+  return {
+    quick: overrides.quick ?? DEFAULT_SCAN_PROFILE_PORTS.quick,
+    standard: overrides.standard ?? DEFAULT_SCAN_PROFILE_PORTS.standard,
+    deep: overrides.deep ?? DEFAULT_SCAN_PROFILE_PORTS.deep,
+    customized: {
+      quick: overrides.quick !== null,
+      standard: overrides.standard !== null,
+      deep: overrides.deep !== null,
+    },
+    updatedAt: (row && row.updated_at) || null,
+  };
+}
+
+function sanitizePortList(ports) {
+  if (!Array.isArray(ports)) throw new Error("ports must be a list of numbers");
+  const clean = Array.from(new Set(ports.map(Number))).filter(
+    (p) => Number.isInteger(p) && p > 0 && p < 65536,
+  );
+  clean.sort((a, b) => a - b);
+  return clean;
+}
 
 // The full set of core/db.cjs recordScan() event kinds a webhook can
 // subscribe to - kept here (not in db.cjs) since it's a webhook-feature
@@ -220,6 +253,42 @@ function createService(options = {}) {
       return { ok: true };
     },
 
+    /* -------------------- scan profile port config -------------------- */
+    getScanProfilePorts() {
+      return normalizeScanProfileConfig(db.getScanProfileConfig());
+    },
+
+    updateScanProfilePorts(profile, ports) {
+      if (!SCAN_PROFILES[profile]) throw new Error(`Unknown scan profile "${profile}"`);
+      const clean = sanitizePortList(ports);
+      const raw = db.getScanProfileConfig();
+      db.setScanProfileConfig({
+        quick_ports: raw ? raw.quick_ports : null,
+        standard_ports: raw ? raw.standard_ports : null,
+        deep_ports: raw ? raw.deep_ports : null,
+        [`${profile}_ports`]: clean,
+        updated_at: new Date().toISOString(),
+      });
+      const updated = service.getScanProfilePorts();
+      broadcast({ type: "scan-profile:updated", config: updated });
+      return updated;
+    },
+
+    resetScanProfilePorts(profile) {
+      if (!SCAN_PROFILES[profile]) throw new Error(`Unknown scan profile "${profile}"`);
+      const raw = db.getScanProfileConfig();
+      db.setScanProfileConfig({
+        quick_ports: raw ? raw.quick_ports : null,
+        standard_ports: raw ? raw.standard_ports : null,
+        deep_ports: raw ? raw.deep_ports : null,
+        [`${profile}_ports`]: null,
+        updated_at: new Date().toISOString(),
+      });
+      const updated = service.getScanProfilePorts();
+      broadcast({ type: "scan-profile:updated", config: updated });
+      return updated;
+    },
+
     /* ----------------------- networks ----------------------- */
     listNetworks() {
       const networks = db.listNetworks();
@@ -262,6 +331,46 @@ function createService(options = {}) {
     updateDevice(id, patch) {
       return db.updateDevice(id, patch);
     },
+
+    /**
+     * Probe a single device's ports on demand (the device detail panel's
+     * "rescan ports" button) instead of waiting for the next full network
+     * scan. Reuses the same profile/port-override resolution as startScan(),
+     * but never touches scan_runs or any other device - see db.rescanDevice().
+     */
+    async rescanDevicePorts(deviceId, scanOptions = {}) {
+      const device = db.getDevice(deviceId);
+      if (!device) throw new Error("Device not found");
+
+      const { profile, ...explicitOptions } = scanOptions;
+      const profileConfig = db.getScanProfileConfig();
+      const portOverrides = profileConfig && {
+        quick: profileConfig.quick_ports,
+        standard: profileConfig.standard_ports,
+        deep: profileConfig.deep_ports,
+      };
+      const resolvedOptions = { ...resolveScanProfile(profile, portOverrides), ...explicitOptions };
+
+      const result = await scanNetwork(device.ip, { ...resolvedOptions, resolveHostnames: true });
+      const found = result.devices[0] || null;
+      const { device: updated, notifications } = db.rescanDevice({ deviceId, found });
+      if (updated) {
+        broadcast({ type: "device:updated", networkId: device.network_id, device: updated });
+      }
+      dispatchWebhook({
+        networkId: device.network_id,
+        scanId: null,
+        summary: {
+          hosts_scanned: 1,
+          devices_found: found ? 1 : 0,
+          new_devices: 0,
+          missing_devices: found ? 0 : 1,
+        },
+        notifications,
+      });
+      return { device: updated };
+    },
+
     listScans(networkId) {
       return db.listScans(networkId);
     },
@@ -334,10 +443,17 @@ function createService(options = {}) {
       const network = db.getNetwork(networkId);
       if (!network) throw new Error("Network not found");
 
-      // A named profile (quick/standard/deep) fills in sane defaults; any
+      // A named profile (quick/standard/deep) fills in sane defaults - using
+      // the user's configured port list for that profile, if any - and any
       // option the caller sets explicitly alongside it still wins.
       const { profile, ...explicitOptions } = scanOptions;
-      const resolvedOptions = { ...resolveScanProfile(profile), ...explicitOptions };
+      const profileConfig = db.getScanProfileConfig();
+      const portOverrides = profileConfig && {
+        quick: profileConfig.quick_ports,
+        standard: profileConfig.standard_ports,
+        deep: profileConfig.deep_ports,
+      };
+      const resolvedOptions = { ...resolveScanProfile(profile, portOverrides), ...explicitOptions };
 
       const run = db.startScan(networkId);
       const signal = { aborted: false };

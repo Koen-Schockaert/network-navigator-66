@@ -7,13 +7,16 @@ import KeyIcon from "@mui/icons-material/Key";
 import LockIcon from "@mui/icons-material/Lock";
 import NetworkPingIcon from "@mui/icons-material/NetworkPing";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import RadarIcon from "@mui/icons-material/Radar";
 import SearchIcon from "@mui/icons-material/Search";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
+import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import Chip from "@mui/material/Chip";
+import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -21,6 +24,7 @@ import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
+import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
@@ -39,6 +43,7 @@ import type {
   HistoryRow,
   Info,
   NetworkRow,
+  ScanProfile,
   VaultStatus,
 } from "@/lib/netscan-types";
 import { mono } from "@/theme";
@@ -53,6 +58,12 @@ import {
   relativeTime,
   useRevealedSecrets,
 } from "./shared";
+
+const RESCAN_PROFILES: { value: ScanProfile; label: string; description: string }[] = [
+  { value: "quick", label: "Quick", description: "Ping sweep only" },
+  { value: "standard", label: "Standard", description: "The default ~30-port list" },
+  { value: "deep", label: "Deep", description: "An extended ~130-port list" },
+];
 
 type Props = {
   devices: DeviceRow[];
@@ -208,10 +219,29 @@ export function DevicesTab({
 
   const { revealed, reveal, hide, clear } = useRevealedSecrets();
   const [pingOpen, setPingOpen] = useState(false);
+  const [rescanAnchor, setRescanAnchor] = useState<HTMLElement | null>(null);
+  const [rescanning, setRescanning] = useState(false);
+  const [rescanError, setRescanError] = useState<string | null>(null);
   const closeDeviceDialog = () => {
     setPingOpen(false);
+    setRescanError(null);
     onSelectDevice(null);
   };
+
+  async function rescanPorts(profile: ScanProfile) {
+    if (!selected) return;
+    setRescanAnchor(null);
+    setRescanning(true);
+    setRescanError(null);
+    try {
+      await netscan.rescanDevicePorts(selected.id, { profile });
+      onRefresh();
+    } catch (cause) {
+      setRescanError(cause instanceof Error ? cause.message : "Could not rescan this device");
+    } finally {
+      setRescanning(false);
+    }
+  }
   const [credentialFormOpen, setCredentialFormOpen] = useState(false);
   const [editingCredential, setEditingCredential] = useState<CredentialRow | null>(null);
   const [deleteCredentialTarget, setDeleteCredentialTarget] = useState<CredentialRow | null>(null);
@@ -223,6 +253,7 @@ export function DevicesTab({
 
   useEffect(() => {
     clear();
+    setRescanError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id]);
 
@@ -462,12 +493,48 @@ export function DevicesTab({
                 <Row label="First seen" value={relativeTime(selected.first_seen)} />
                 <Row label="Last seen" value={relativeTime(selected.last_seen)} />
                 <Box>
-                  <Typography variant="overline" color="text.secondary">
-                    Open ports
-                  </Typography>
+                  <Stack
+                    direction="row"
+                    sx={{ justifyContent: "space-between", alignItems: "center" }}
+                  >
+                    <Typography variant="overline" color="text.secondary">
+                      Open ports
+                    </Typography>
+                    <Button
+                      size="small"
+                      startIcon={
+                        rescanning ? <CircularProgress size={14} /> : <RadarIcon fontSize="small" />
+                      }
+                      disabled={rescanning}
+                      onClick={(event) => setRescanAnchor(event.currentTarget)}
+                    >
+                      {rescanning ? "Rescanning…" : "Rescan"}
+                    </Button>
+                    <Menu
+                      anchorEl={rescanAnchor}
+                      open={Boolean(rescanAnchor)}
+                      onClose={() => setRescanAnchor(null)}
+                    >
+                      {RESCAN_PROFILES.map((profile) => (
+                        <MenuItem key={profile.value} onClick={() => rescanPorts(profile.value)}>
+                          <Box>
+                            <Typography variant="body2">{profile.label}</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {profile.description}
+                            </Typography>
+                          </Box>
+                        </MenuItem>
+                      ))}
+                    </Menu>
+                  </Stack>
                   <Box sx={{ mt: 0.5 }}>
                     <PortChips ports={selected.open_ports} labels={labels} max={20} />
                   </Box>
+                  {rescanError ? (
+                    <Alert severity="warning" sx={{ mt: 1 }} onClose={() => setRescanError(null)}>
+                      {rescanError}
+                    </Alert>
+                  ) : null}
                 </Box>
               </Stack>
 

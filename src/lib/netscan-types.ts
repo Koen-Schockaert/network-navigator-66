@@ -204,3 +204,14 @@ export type WebhookConfig = {
 };
 
 export type WebhookConfigPatch = Partial<Omit<WebhookConfig, "updatedAt">>;
+
+// The effective port list per scan profile - built-in defaults merged with
+// any user override - plus which profiles currently have one, so the UI can
+// show a "Reset to default" action only where it would do something.
+export type ScanProfilePortsConfig = {
+  quick: number[];
+  standard: number[];
+  deep: number[];
+  customized: Record<ScanProfile, boolean>;
+  updatedAt: string | null;
+};

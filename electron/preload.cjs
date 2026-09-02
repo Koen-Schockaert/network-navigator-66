@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld("netscan", {
   getWebhookConfig: () => call("getWebhookConfig"),
   updateWebhookConfig: (patch) => call("updateWebhookConfig", patch),
   testWebhook: () => call("testWebhook"),
+  getScanProfilePorts: () => call("getScanProfilePorts"),
+  updateScanProfilePorts: (profile, ports) => call("updateScanProfilePorts", profile, ports),
+  resetScanProfilePorts: (profile) => call("resetScanProfilePorts", profile),
 
   listNetworks: () => call("listNetworks"),
   createNetwork: (input) => call("createNetwork", input),
@@ -29,6 +32,7 @@ contextBridge.exposeInMainWorld("netscan", {
   listDevices: (networkId) => call("listDevices", networkId),
   getDevice: (id) => call("getDevice", id),
   updateDevice: (id, patch) => call("updateDevice", id, patch),
+  rescanDevicePorts: (id, options) => call("rescanDevicePorts", id, options),
 
   listScans: (networkId) => call("listScans", networkId),
   getScanDetail: (id) => call("getScanDetail", id),

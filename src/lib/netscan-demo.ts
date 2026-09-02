@@ -9,6 +9,8 @@ import type {
   Info,
   NetworkRow,
   OuiStatus,
+  ScanProfile,
+  ScanProfilePortsConfig,
   ScanRow,
   VaultStatus,
   WebhookConfig,
@@ -275,6 +277,23 @@ let demoWebhookConfig: WebhookConfig = {
   updatedAt: null,
 };
 
+// "quick" scans no ports by default (ping only) - matches core/scanner.cjs's
+// SCAN_PROFILES. standard/deep mirror its real port lists, just illustrative
+// rather than exhaustive, same as demoInfo.defaultPorts below.
+const DEMO_DEFAULT_PROFILE_PORTS: Record<ScanProfile, number[]> = {
+  quick: [],
+  standard: [22, 80, 443, 445, 631, 3389, 5432, 8080, 9100],
+  deep: [
+    21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 631, 3000, 3306, 3389, 5432, 5900, 8080, 8443, 9100,
+  ],
+};
+
+let demoScanProfileConfig: ScanProfilePortsConfig = {
+  ...DEMO_DEFAULT_PROFILE_PORTS,
+  customized: { quick: false, standard: false, deep: false },
+  updatedAt: null,
+};
+
 function getState(): DemoState {
   if (!state) state = buildState();
   return state;
@@ -344,6 +363,33 @@ export const demoBackend = {
     return demoWebhookConfig;
   },
 
+  getScanProfilePorts(): ScanProfilePortsConfig {
+    return demoScanProfileConfig;
+  },
+
+  updateScanProfilePorts(profile: ScanProfile, ports: number[]): ScanProfilePortsConfig {
+    const clean = Array.from(new Set(ports.map(Number)))
+      .filter((p) => Number.isInteger(p) && p > 0 && p < 65536)
+      .sort((a, b) => a - b);
+    demoScanProfileConfig = {
+      ...demoScanProfileConfig,
+      [profile]: clean,
+      customized: { ...demoScanProfileConfig.customized, [profile]: true },
+      updatedAt: new Date().toISOString(),
+    };
+    return demoScanProfileConfig;
+  },
+
+  resetScanProfilePorts(profile: ScanProfile): ScanProfilePortsConfig {
+    demoScanProfileConfig = {
+      ...demoScanProfileConfig,
+      [profile]: DEMO_DEFAULT_PROFILE_PORTS[profile],
+      customized: { ...demoScanProfileConfig.customized, [profile]: false },
+      updatedAt: new Date().toISOString(),
+    };
+    return demoScanProfileConfig;
+  },
+
   listNetworks(): NetworkRow[] {
     const { networks, devices, scans } = getState();
     return networks.map((network) => {
@@ -403,6 +449,52 @@ export const demoBackend = {
     const device = getState().devices.find((d) => d.id === id);
     if (device) Object.assign(device, patch);
     return device ?? null;
+  },
+
+  async rescanDevicePorts(
+    id: string,
+    options: { profile?: ScanProfile } = {},
+  ): Promise<{ device: DeviceRow | null }> {
+    const device = getState().devices.find((d) => d.id === id);
+    if (!device) throw new Error("Device not found");
+
+    // A little artificial delay so the button's spinner isn't instant even
+    // in demo mode - a real port probe takes a moment too.
+    await new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 500));
+
+    if (options.profile === "quick") {
+      device.last_seen = new Date().toISOString();
+      return { device };
+    }
+
+    const candidates = options.profile === "deep" ? [22, 80, 443, 3000, 8080, 8443] : [22, 80, 443];
+    const previous = device.open_ports;
+    const kept = previous.filter((p) => !candidates.includes(p));
+    const found = candidates.filter(() => Math.random() > 0.4);
+    const ports = Array.from(new Set([...kept, ...found])).sort((a, b) => a - b);
+
+    const opened = ports.filter((p) => !previous.includes(p));
+    const closed = previous.filter((p) => !ports.includes(p));
+    if (opened.length || closed.length) {
+      getState().history.unshift({
+        id: `demo-history-${Date.now()}`,
+        device_id: device.id,
+        scan_id: "",
+        event: "ports_changed",
+        detail: [
+          opened.length ? `opened: ${opened.join(", ")}` : null,
+          closed.length ? `closed: ${closed.join(", ")}` : null,
+        ]
+          .filter(Boolean)
+          .join(" | "),
+        created_at: new Date().toISOString(),
+      });
+    }
+
+    device.open_ports = ports;
+    device.online = true;
+    device.last_seen = new Date().toISOString();
+    return { device };
   },
 
   listScans(networkId?: string): ScanRow[] {
